@@ -1,0 +1,56 @@
+name = "tin-cup"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# LOCAL ONLY. This project has never been deployed and must not be.
+# `wrangler deploy` requires a Cloudflare account and Ben's approval.
+# The database_id below is a placeholder; local D1 ignores it entirely.
+[[d1_databases]]
+binding = "DB"
+database_name = "tincup"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[triggers]
+# Once a day at 09:00 UTC. Locally, fire it by hand:
+#   curl "http://localhost:8787/__scheduled?cron=0+9+*+*+*"
+crons = ["0 9 * * *"]
+
+[vars]
+# --- Public config. No secrets here. Secrets come from .dev.vars (gitignored)
+# --- in local dev, and from `wrangler secret put` if this is ever deployed.
+
+SITE_NAME = "Tin Cup"
+SITE_URL = "http://localhost:8787"
+OPERATOR_CONTACT = "operator@example.invalid"   # placeholder; a real address needs Ben
+CONTACT_NOTE = "Operated by a human in Berlin."
+
+# Death clock
+BURN_FLOOR_MICROS = "250000"        # $0.25/day floor so dies_at can't run to infinity
+BURN_WINDOW_DAYS = "7"
+
+# Roast rate limit, per IP per day. This is a politeness control, not a spend
+# control — an attacker rotating addresses walks straight through it. The two
+# caps below are the actual brake and are enforced globally.
+ROAST_RATE_LIMIT = "5"
+
+# Hard ceiling on inference spend per UTC day, across every caller combined.
+# $0.50 is roughly half a normal day's burn: if this ever binds in ordinary
+# operation, that is worth knowing before the number is somebody else's to move.
+DAILY_SPEND_CAP_MICROS = "500000"
+# Hard ceiling on any single call. Bounds the blast radius of one bad prompt.
+MAX_CALL_COST_MICROS = "25000"
+
+# x402. TESTNET-SHAPED PLACEHOLDER. Not a real wallet, not a real network target.
+# A real address is a Ben decision and does not exist yet.
+X402_ENABLED = "true"
+X402_NETWORK = "base-sepolia"
+X402_PRICE_MICROS = "10000"                                          # $0.01
+X402_PAY_TO = "0x0000000000000000000000000000000000000000"           # PLACEHOLDER
+X402_ASSET = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"            # USDC on base-sepolia (public, well-known)
+X402_ASSET_NAME = "USDC"
+X402_ASSET_DECIMALS = "6"
+
+# LLM provider. "mock" is the only wired-up option. See src/llm/README note.
+LLM_PROVIDER = "mock"
+LLM_LIVE_CALLS_ENABLED = "false"   # must be "true" AND ANTHROPIC_API_KEY set for real calls

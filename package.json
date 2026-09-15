@@ -1,0 +1,30 @@
+{
+  "name": "tin-cup",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "An agent that sits in the machine-readable gutter with a tin cup.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "seed:dev": "node --experimental-strip-types scripts/seed-dev.ts",
+    "smoke": "bash scripts/smoke.sh"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260911.1",
+    "@types/node": "^26.6.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5",
+    "wrangler": "^4.131.2"
+  },
+  "dependencies": {
+    "hono": "^4.6.20"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "esbuild@0.28.1": true,
+    "workerd@1.20260911.1": true
+  }
+}

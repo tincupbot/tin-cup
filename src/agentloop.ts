@@ -1,0 +1,173 @@
+import type { Db } from "./db.ts";
+import type { Env } from "./env.ts";
+import { clockConfig, spendCaps } from "./env.ts";
+import { ensureSchema } from "./db.ts";
+import { readClock, reconcileLifecycle, formatDeathDate } from "./deathclock.ts";
+import { formatUsd, formatRate } from "./money.ts";
+import { summary, dayKey } from "./passersby/counter.ts";
+import { pruneRateLimits } from "./ratelimit.ts";
+import { billedComplete, makeProvider, SpendCapReachedError } from "./llm/index.ts";
+import { ROUTINE_MODEL } from "./llm/pricing.ts";
+import { AgentIsDeadError } from "./deathclock.ts";
+import * as copy from "./copy.ts";
+
+/**
+ * The scheduled run.
+ *
+ * IT DOES NOT SEND ANYTHING. The daily post is written to the local `outbox`
+ * table and stays there. There is no X account, no API client, and no network
+ * call in this file. Posting is a separate, separately-approved step — see
+ * README, "Before this can go live".
+ */
+
+export type LoopResult = {
+  ran_at: string;
+  alive: boolean;
+  lifecycle_change: "died" | "resurrected" | null;
+  balance_micros: number;
+  performances_run: number;
+  post_written: boolean;
+  post_body: string | null;
+  skipped_reason: string | null;
+};
+
+export async function runAgentLoop(db: Db, env: Env, now: Date = new Date()): Promise<LoopResult> {
+  await ensureSchema(db);
+
+  // 1. Square the recorded state with what the balance actually says.
+  const lifecycle = await reconcileLifecycle(db, now);
+  const clock = await readClock(db, clockConfig(env), now);
+
+  const result: LoopResult = {
+    ran_at: now.toISOString(),
+    alive: clock.alive,
+    lifecycle_change: lifecycle.changed,
+    balance_micros: clock.balance_micros,
+    performances_run: 0,
+    post_written: false,
+    post_body: null,
+    skipped_reason: null,
+  };
+
+  await pruneRateLimits(db, now);
+
+  if (!clock.alive) {
+    result.skipped_reason = "dead — no inference, no post";
+    return result;
+  }
+
+  // 2. Queued performances. Each one costs money and can be the thing that
+  //    kills it, which is correct: it should die mid-sentence, doing the job.
+  const provider = makeProvider(env);
+  const { results: queued } = await db
+    .prepare(`SELECT id, kind, subject FROM performances WHERE status = 'queued' ORDER BY created_at ASC LIMIT 5`)
+    .all<{ id: string; kind: string; subject: string }>();
+
+  const caps = spendCaps(env);
+
+  for (const p of queued) {
+    try {
+      const res = await billedComplete(
+        db,
+        provider,
+        {
+          model: ROUTINE_MODEL,
+          system: SYSTEM_PROMPT,
+          prompt: p.subject,
+          maxTokens: 600,
+          purpose: p.kind,
+        },
+        now,
+        caps,
+      );
+      await db
+        .prepare(`UPDATE performances SET output = ?, status = 'done' WHERE id = ?`)
+        .bind(res.text, p.id)
+        .run();
+      result.performances_run++;
+    } catch (err) {
+      if (err instanceof AgentIsDeadError) {
+        await reconcileLifecycle(db, now);
+        result.alive = false;
+        result.skipped_reason = "ran out of money mid-queue";
+        return result;
+      }
+      if (err instanceof SpendCapReachedError) {
+        // Leave the rest queued rather than failing them. The budget resets at
+        // midnight UTC and the work is still wanted; it just isn't affordable
+        // right now. The daily post below costs nothing, so it still goes out.
+        result.skipped_reason = "daily spend cap reached — remaining performances left queued";
+        break;
+      }
+      await db.prepare(`UPDATE performances SET status = 'failed' WHERE id = ?`).bind(p.id).run();
+    }
+  }
+
+  // 3. The daily post. Written locally. Not sent.
+  const post = await composeDailyPost(db, env, now);
+  const day = dayKey(now);
+  await db
+    .prepare(
+      `INSERT INTO outbox (created_at, day, channel, body, status) VALUES (?, ?, 'x', ?, 'unsent')
+       ON CONFLICT(day, channel) DO UPDATE SET body = excluded.body, created_at = excluded.created_at`,
+    )
+    .bind(now.toISOString(), day, post)
+    .run();
+
+  result.post_written = true;
+  result.post_body = post;
+
+  // 4. The post itself may have been the spend that finished it.
+  const after = await reconcileLifecycle(db, now);
+  if (after.changed === "died") {
+    result.alive = false;
+    result.lifecycle_change = "died";
+  }
+  const finalClock = await readClock(db, clockConfig(env), now);
+  result.balance_micros = finalClock.balance_micros;
+
+  return result;
+}
+
+const SYSTEM_PROMPT = [
+  "You are Tin Cup, a program that pays for its own inference out of donations.",
+  "Dry, self-aware, a little dignified. Never pitiful. Never imply human hardship — nobody goes hungry if you fail, you just stop.",
+  "Never use the word charity. Never chase anyone; you do not send messages, you are read.",
+  "Short sentences. The numbers do the work.",
+].join(" ");
+
+/**
+ * The daily post: the same four numbers, every day. Consistency is what makes a
+ * format followable, so the shape is fixed and only the figures move.
+ */
+export async function composeDailyPost(db: Db, env: Env, now: Date = new Date()): Promise<string> {
+  const clock = await readClock(db, clockConfig(env), now);
+  const counter = await summary(db, now);
+
+  // Count the day's roasts from the ledger rather than estimating. Every number
+  // in a public post has to be one somebody could check.
+  const roasts = await db
+    .prepare(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(amount_micros), 0) AS spent FROM ledger
+       WHERE kind = 'inference' AND metadata LIKE '%"purpose":"roast"%' AND ts >= ?`,
+    )
+    .bind(new Date(now.getTime() - 86_400_000).toISOString())
+    .first<{ n: number; spent: number }>();
+
+  const roastCount = roasts?.n ?? 0;
+  const roastLine =
+    roastCount === 0
+      ? "Nothing asked to be roasted today."
+      : `Roasted ${roastCount} ${roastCount === 1 ? "landing page" : "landing pages"} for ${formatUsd(roasts?.spent ?? 0)}.`;
+
+  return [
+    `${formatUsd(clock.balance_micros)} left.`,
+    clock.days_left === null
+      ? "No days left."
+      : `${clock.days_left.toFixed(1)} days at ${formatRate(clock.burn_micros_per_day)}. Dies ${formatDeathDate(clock.dies_at, now)}.`,
+    roastLine,
+    counter.today_line,
+  ].join("\n");
+}
+
+export { copy };
