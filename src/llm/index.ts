@@ -1,22 +1,33 @@
 import type { Env, SpendCaps } from "../env.ts";
-import { spendCaps } from "../env.ts";
 import type { LlmProvider, LlmRequest } from "./provider.ts";
 import { MockProvider } from "./mock.ts";
 import { AnthropicProvider } from "./anthropic.ts";
+import { OpenAiProvider } from "./openai.ts";
 import type { Db } from "../db.ts";
 import { append } from "../ledger/ledger.ts";
 import { readClock, AgentIsDeadError } from "../deathclock.ts";
 import { PRICING, PRICING_VERIFIED_ON } from "./pricing.ts";
 import { dayKey } from "../passersby/sentences.ts";
 
+/**
+ * Mock is the default and stays the default.
+ *
+ * Both live providers are inert twice over: they need `LLM_PROVIDER` set to
+ * their name *and* `LLM_LIVE_CALLS_ENABLED === "true"` *and* a key. Anything
+ * unrecognised falls back to the mock rather than erroring, because the failure
+ * mode of a typo in config should be "no spend", never "spend on the wrong
+ * thing".
+ */
 export function makeProvider(env: Env): LlmProvider {
-  if (env.LLM_PROVIDER === "anthropic") {
-    return new AnthropicProvider({
-      apiKey: env.ANTHROPIC_API_KEY,
-      liveCallsEnabled: env.LLM_LIVE_CALLS_ENABLED === "true",
-    });
+  const liveCallsEnabled = env.LLM_LIVE_CALLS_ENABLED === "true";
+  switch (env.LLM_PROVIDER) {
+    case "anthropic":
+      return new AnthropicProvider({ apiKey: env.ANTHROPIC_API_KEY, liveCallsEnabled });
+    case "openai":
+      return new OpenAiProvider({ apiKey: env.OPENAI_API_KEY, liveCallsEnabled });
+    default:
+      return new MockProvider();
   }
-  return new MockProvider();
 }
 
 /** Thrown when the global daily inference budget is used up. */

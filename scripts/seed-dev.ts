@@ -23,7 +23,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
-import { SCHEMA_STATEMENTS, type Db, type DbStatement } from "../src/db.ts";
+import type { Db, DbStatement } from "../src/db.ts";
+import { resetDatabase } from "./migrations.ts";
 import { append } from "../src/ledger/ledger.ts";
 import { classifyUa, surfaceFor, shouldLog } from "../src/passersby/classify.ts";
 import { dayKey } from "../src/passersby/sentences.ts";
@@ -158,12 +159,10 @@ async function main() {
   const db = nodeDb(sqlite);
 
   // Wipe. DROP is not blocked by the append-only triggers (they guard rows, not
-  // the table), and this is disposable local dev state by definition.
+  // the table), and this is disposable local dev state by definition. See
+  // `npm run db:reset` and the README for the standalone version of this.
   console.log(`Resetting local D1 at ${path}`);
-  for (const t of ["ledger", "passersby", "passersby_daily", "kofi_messages", "rate_limits", "outbox", "performances", "state"]) {
-    sqlite.exec(`DROP TABLE IF EXISTS ${t}`);
-  }
-  for (const sql of SCHEMA_STATEMENTS) sqlite.exec(sql);
+  resetDatabase(sqlite);
 
   const now = new Date();
   const days = ROASTS_PER_DAY.length;
@@ -324,6 +323,12 @@ async function main() {
   sqlite.exec(`
     INSERT INTO passersby_daily (day, ua_family, surface, hits, paid)
     SELECT day, ua_family, surface, COUNT(*), SUM(paid) FROM passersby GROUP BY day, ua_family, surface
+  `);
+  // The distinct-agent index, derived from the same rows. Live traffic writes
+  // this as it goes; the fixture backfills it so the counter has a past too.
+  sqlite.exec(`
+    INSERT OR IGNORE INTO passersby_agents (day, ua, ua_family, first_ts)
+    SELECT day, ua, ua_family, MIN(ts) FROM passersby GROUP BY day, ua
   `);
   sqlite.exec("COMMIT");
 

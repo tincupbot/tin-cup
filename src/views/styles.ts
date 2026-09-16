@@ -1,28 +1,31 @@
 /**
  * All CSS, inlined into every page.
  *
- * No build step, no framework, no JavaScript required for anything that matters.
- * Dark, quiet, a bit melancholy — one of the launch channels is
- * r/InternetIsBeautiful and a donation page that looks like a donation page is
- * not going to survive that crowd.
+ * No build step, no framework, and — deliberately — not one byte of client-side
+ * JavaScript anywhere on the site. That is what lets the Content-Security-Policy
+ * stay at `default-src 'none'`: there is no script to allow.
  *
- * Typography does most of the work: a serif for the voice, a monospace for the
- * money. The money is always monospace. It should look like an instrument
- * reading, not like a pitch.
+ * The palette is the approved "busker" direction: newsprint, not a dashboard.
+ * Paper, a double rule under the banner, a serif for the voice and a monospace
+ * for the money. The money is always monospace. It should read like an
+ * instrument, not like a pitch. The one saturated colour in the whole document
+ * is the maroon, and it is spent only on the ask and on the cost of a turn.
  */
 export const STYLES = /* css */ `
 :root {
-  --bg: #0c0d10;
-  --bg-raised: #131519;
-  --line: #22252c;
-  --line-soft: #1a1d22;
-  --ink: #d8d6d1;
-  --ink-dim: #8b8b8f;
-  --ink-faint: #5d5f66;
-  --brass: #c9a227;
-  --brass-dim: #8a7226;
-  --alive: #7fae72;
-  --dead: #b4574f;
+  --paper: #faf7f1;
+  --paper-2: #f3efe5;
+  --paper-3: #ece6d8;
+  --rule: #ddd6c6;
+  --rule-2: #c9c0ab;
+  --ink: #1b1a17;
+  --ink-2: #4a473f;
+  --ink-3: #817c6f;
+  --red: #9c2b22;
+  --red-dark: #7c1f18;
+  --brass: #8a6d1f;
+  --alive: #3f6b35;
+  --dead: #9c2b22;
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
@@ -33,225 +36,305 @@ html { -webkit-text-size-adjust: 100%; }
 
 body {
   margin: 0;
-  background: var(--bg);
-  background-image:
-    radial-gradient(1100px 620px at 50% -12%, #16181d 0%, transparent 70%),
-    radial-gradient(700px 400px at 88% 105%, #121318 0%, transparent 65%);
-  background-attachment: fixed;
+  background: var(--paper);
   color: var(--ink);
   font-family: var(--serif);
-  font-size: 18px;
-  line-height: 1.65;
+  font-size: 19px;
+  line-height: 1.7;
   -webkit-font-smoothing: antialiased;
 }
 
-.wrap { max-width: 44rem; margin: 0 auto; padding: 3.5rem 1.5rem 6rem; }
-@media (max-width: 34rem) { .wrap { padding: 2.25rem 1.15rem 4rem; } body { font-size: 17px; } }
+.wrap { max-width: 44rem; margin: 0 auto; padding: 2.8rem 1.5rem 5rem; }
+@media (max-width: 34rem) { .wrap { padding: 2rem 1.15rem 3.5rem; } body { font-size: 18px; } }
 
-a { color: var(--ink); text-decoration-color: var(--ink-faint); text-underline-offset: 3px; }
-a:hover { color: var(--brass); text-decoration-color: var(--brass-dim); }
+a { color: var(--ink); text-decoration-color: var(--rule-2); text-underline-offset: 3px; }
+a:hover { color: var(--red); text-decoration-color: var(--red); }
 
-h1, h2, h3 { font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
-
-.masthead { display: flex; align-items: baseline; gap: 0.7rem; margin-bottom: 0.25rem; }
-.masthead h1 { font-size: 1.5rem; margin: 0; }
-.masthead .tag { color: var(--ink-faint); font-size: 0.9rem; }
-.sub { color: var(--ink-dim); margin: 0 0 3rem; font-size: 1rem; }
-
-/* ---- the clock -------------------------------------------------------- */
-
-.clock { margin: 0 0 2.75rem; }
-
-.balance {
-  font-family: var(--mono);
-  font-size: clamp(3rem, 13vw, 5rem);
-  line-height: 1;
-  letter-spacing: -0.035em;
-  color: var(--brass);
-  margin: 0;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-.balance .unit { color: var(--brass-dim); font-size: 0.4em; letter-spacing: 0; margin-left: 0.5rem; }
-
-.clockline {
-  font-family: var(--mono);
-  font-size: 0.92rem;
-  color: var(--ink-dim);
-  margin: 0.9rem 0 0;
-  font-variant-numeric: tabular-nums;
-}
-.clockline .sep { color: var(--ink-faint); padding: 0 0.45rem; }
-.clockline strong { color: var(--ink); font-weight: 500; }
-
-.lifebar {
-  height: 3px;
-  background: var(--line-soft);
-  border-radius: 2px;
-  overflow: hidden;
-  margin-top: 1.4rem;
-}
-.lifebar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--brass-dim), var(--brass)); }
-
-/* ---- the cup ---------------------------------------------------------- */
-
-.cup { display: flex; gap: 1.6rem; align-items: center; margin: 2.75rem 0; }
-.cup svg { flex: none; }
-.cup .cup-copy { margin: 0; color: var(--ink-dim); font-size: 0.97rem; }
-.cup .cup-copy strong { color: var(--ink); font-weight: 500; }
-@media (max-width: 30rem) { .cup { flex-direction: column; align-items: flex-start; gap: 1.1rem; } }
-
-/* ---- sections --------------------------------------------------------- */
-
-section { margin: 3.25rem 0; }
-section > h2 {
-  font-size: 0.76rem;
-  text-transform: uppercase;
-  letter-spacing: 0.16em;
-  color: var(--ink-faint);
-  font-family: var(--mono);
-  font-weight: 500;
-  margin: 0 0 1.1rem;
-  padding-bottom: 0.55rem;
-  border-bottom: 1px solid var(--line-soft);
-}
+h1, h2, h3 { font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
 
 p { margin: 0 0 1.1rem; }
-.dim { color: var(--ink-dim); }
-.faint { color: var(--ink-faint); font-size: 0.86rem; }
+.dim { color: var(--ink-2); }
+.faint { color: var(--ink-3); font-size: 0.86rem; }
+.pull { font-size: 1.16rem; line-height: 1.55; margin: 0 0 0.9rem; }
+hr.thin { border: 0; border-top: 1px solid var(--rule); margin: 2.6rem 0; }
 
-.pull {
-  font-size: 1.22rem;
-  line-height: 1.5;
-  margin: 0 0 0.9rem;
-  color: var(--ink);
-}
+blockquote { margin: 0; padding-left: 1.1rem; border-left: 2px solid var(--rule-2); color: var(--ink-2); }
 
-blockquote {
-  margin: 0;
-  padding-left: 1.1rem;
-  border-left: 2px solid var(--line);
-  color: var(--ink-dim);
-}
-
-/* ---- money / tables --------------------------------------------------- */
-
-.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-
-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-family: var(--mono); }
-th {
-  text-align: left; font-weight: 500; color: var(--ink-faint);
-  text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.68rem;
-  padding: 0 0.6rem 0.6rem 0; border-bottom: 1px solid var(--line);
-}
-td { padding: 0.55rem 0.6rem 0.55rem 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
-td:last-child, th:last-child { padding-right: 0; text-align: right; }
-.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.in { color: var(--alive); }
-.out { color: var(--ink-dim); }
-.marker { color: var(--brass); }
-tr.is-marker td { background: rgba(201, 162, 39, 0.045); }
-
-.hash { color: var(--ink-faint); font-size: 0.72rem; word-break: break-all; }
-
-/* ---- lists ------------------------------------------------------------ */
-
-ul.plain { list-style: none; padding: 0; margin: 0; }
-ul.plain li { padding: 0.5rem 0; border-bottom: 1px solid var(--line-soft); display: flex; justify-content: space-between; gap: 1rem; }
-ul.plain li:last-child { border-bottom: 0; }
-ul.plain .who { font-family: var(--mono); font-size: 0.86rem; }
-ul.plain .what { color: var(--ink-faint); font-family: var(--mono); font-size: 0.8rem; white-space: nowrap; }
-
-/* ---- form ------------------------------------------------------------- */
-
-form { margin: 0; }
-textarea, input[type="text"] {
-  width: 100%;
-  background: var(--bg-raised);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  color: var(--ink);
-  padding: 0.75rem 0.85rem;
-  font-family: var(--mono);
-  font-size: 0.86rem;
-  line-height: 1.55;
-  resize: vertical;
-}
-textarea:focus, input:focus { outline: none; border-color: var(--brass-dim); }
-textarea::placeholder { color: var(--ink-faint); }
-
-button {
-  margin-top: 0.85rem;
-  background: transparent;
-  border: 1px solid var(--brass-dim);
-  color: var(--brass);
-  font-family: var(--mono);
-  font-size: 0.82rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 0.6rem 1.35rem;
-  border-radius: 3px;
-  cursor: pointer;
-}
-button:hover { background: rgba(201, 162, 39, 0.09); }
-
-/* ---- notices ---------------------------------------------------------- */
-
-.notice {
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--brass-dim);
-  background: var(--bg-raised);
-  padding: 0.9rem 1.1rem;
-  font-size: 0.88rem;
-  color: var(--ink-dim);
-  border-radius: 0 3px 3px 0;
-  margin: 0 0 1.5rem;
-}
-.notice.warn { border-left-color: var(--dead); }
-.notice strong { color: var(--ink); font-weight: 600; }
+/* ---- the fixture banner ------------------------------------------------ */
 
 .fixture-banner {
   font-family: var(--mono);
-  font-size: 0.74rem;
+  font-size: 0.72rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   text-align: center;
-  background: #2a1f14;
-  color: #e0b354;
-  border-bottom: 1px solid #4a3a1c;
-  padding: 0.55rem 1rem;
+  background: #241a17;
+  color: #e8c9c4;
+  padding: 0.5rem 1rem;
 }
 
-.roast {
-  border-left: 2px solid var(--brass-dim);
-  padding: 0.2rem 0 0.2rem 1.2rem;
-  margin: 0 0 1.75rem;
-  font-size: 1.06rem;
+/* ---- the appeal banner ------------------------------------------------- */
+
+.banner { border-bottom: 3px double var(--rule-2); background: var(--paper-2); }
+.banner-in {
+  max-width: 56rem; margin: 0 auto; padding: 1.5rem 1.5rem 1.4rem;
+  display: grid; grid-template-columns: auto 1fr; gap: 1.4rem; align-items: start;
 }
+.portrait {
+  width: 92px; height: 92px; border: 1px solid var(--rule-2); background: var(--paper);
+  display: grid; place-items: center; font-family: var(--mono); font-size: 0.58rem;
+  line-height: 1.5; color: var(--ink-3); text-align: center; letter-spacing: 0.06em; padding: 0.3rem;
+}
+.portrait b { display: block; font-size: 1.7rem; color: var(--ink); letter-spacing: -0.02em; font-weight: 600; }
+.banner h1 { margin: 0 0 0.35rem; font-size: 1.24rem; font-weight: 600; }
+.banner p { margin: 0; font-size: 0.98rem; color: var(--ink-2); line-height: 1.55; }
+.banner .row { margin-top: 0.95rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.banner .fine {
+  font-family: var(--mono); font-size: 0.7rem; color: var(--ink-3);
+  margin-top: 0.7rem; letter-spacing: 0.02em;
+}
+
+.pill {
+  font-family: var(--mono); font-size: 0.82rem; padding: 0.5rem 0.95rem;
+  border: 1px solid var(--rule-2); background: var(--paper); color: var(--ink); text-decoration: none;
+}
+.pill:hover { border-color: var(--red); color: var(--red); }
+.pill.now { background: var(--red); border-color: var(--red); color: #fff; letter-spacing: 0.04em; }
+.pill.now:hover { background: var(--red-dark); border-color: var(--red-dark); color: #fff; }
+
+/* ---- the pitch --------------------------------------------------------- */
+
+.pitch { border: 1px solid var(--rule-2); background: var(--paper-2); margin: 0 0 3.2rem; }
+.pitch-head { padding: 1.4rem 1.6rem 1.1rem; border-bottom: 1px solid var(--rule); }
+.pitch-head h2 { margin: 0 0 0.35rem; font-size: 1.16rem; font-weight: 600; }
+.pitch-head p { margin: 0; font-size: 0.95rem; color: var(--ink-2); line-height: 1.55; }
+.pitch-body { padding: 1.3rem 1.6rem 1.6rem; }
+
+/* The repertoire. Radio inputs, not buttons: the whole page has no JavaScript,
+   so "which turn" has to survive a plain form POST. The input itself is hidden
+   and the label is the control, which keeps the keyboard and screen-reader
+   behaviour of a real radio group. */
+.reps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin: 0 0 1rem; border: 0; padding: 0; }
+.reps legend { padding: 0; margin: 0 0 0.55rem; font-family: var(--mono); font-size: 0.62rem;
+  letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-3); }
+.rep { display: block; border: 1px solid var(--rule-2); background: var(--paper); padding: 0.7rem 0.85rem;
+  cursor: pointer; font-size: 0.95rem; color: var(--ink); line-height: 1.35; }
+.rep small { display: block; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ink-3); margin-top: 0.28rem; }
+.rep:hover { border-color: var(--ink-3); }
+.rep input { position: absolute; opacity: 0; width: 0; height: 0; }
+.rep:has(input:checked) { border-color: var(--red); border-width: 2px; color: var(--red);
+  padding: calc(0.7rem - 1px) calc(0.85rem - 1px); }
+.rep:has(input:checked) small { color: var(--red); opacity: 0.72; }
+.rep:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.ask-line { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.ask-line input[type="text"] {
+  flex: 1 1 14rem; width: auto; font-family: var(--serif); font-size: 1rem; padding: 0.7rem 0.8rem;
+  border: 1px solid var(--rule-2); background: var(--paper); color: var(--ink);
+}
+.ask-line input[type="text"]:focus { outline: 2px solid var(--ink); outline-offset: -1px; border-color: var(--ink); }
+.go {
+  font-family: var(--mono); font-size: 0.85rem; letter-spacing: 0.04em; padding: 0.7rem 1.15rem;
+  border: 1px solid var(--red); background: var(--red); color: #fff; cursor: pointer; margin: 0;
+}
+.go:hover { background: var(--red-dark); border-color: var(--red-dark); }
+.free { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-3); margin: 0.85rem 0 0; letter-spacing: 0.02em; }
+
+/* ---- a performance, and the hat that follows it ------------------------ */
+
+.perf { margin: 1.4rem 0 0; border-top: 1px solid var(--rule-2); padding: 1.3rem 0 0; }
+.perf .req { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0 0 0.7rem; }
+.turn-out { margin: 0 0 1.1rem; font-size: 1.06rem; line-height: 1.62;
+  border-left: 2px solid var(--rule-2); padding-left: 1.1rem; }
+.turn-out:last-child { margin-bottom: 0; }
+
+/* The hat only ever renders underneath a delivered turn. That is the whole
+   argument of the design: the ask is downstream of the thing, and it carries
+   the thing's price. */
+.hat { margin: 1.5rem 0 0; border: 1px solid var(--rule-2); background: var(--paper-3); padding: 1.15rem 1.25rem; }
+.hat .cost { font-family: var(--mono); font-size: 0.8rem; color: var(--ink-2); margin: 0 0 0.85rem; line-height: 1.6; }
+.hat .cost b { color: var(--red); font-weight: 600; }
+.hat-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.coin { font-family: var(--mono); font-size: 0.92rem; padding: 0.55rem 1rem; border: 1px solid var(--rule-2);
+  background: var(--paper); color: var(--ink); text-decoration: none; }
+.coin:hover { border-color: var(--red); color: var(--red); }
+.hat .walk { font-family: var(--mono); font-size: 0.72rem; color: var(--ink-3); margin: 0.85rem 0 0; }
+.hat .walk a { color: var(--ink-3); }
+
+.spent { border: 1px dashed var(--rule-2); background: var(--paper); padding: 1.1rem 1.25rem;
+  margin: 1.4rem 0 0; font-size: 0.95rem; color: var(--ink-2); }
+.spent b { color: var(--ink); }
+
+/* ---- the letter -------------------------------------------------------- */
+
+.dateline { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0 0 1.9rem; }
+.letter { max-width: 38rem; }
+.letter p { margin: 0 0 1.35rem; }
+.letter p.lede { font-size: 1.16rem; line-height: 1.6; }
+.letter p.lede::first-letter { float: left; font-size: 3.35rem; line-height: 0.82; padding: 0.13em 0.1em 0 0; font-weight: 600; }
+.sig { margin-top: 2.3rem; padding-top: 1.4rem; border-top: 1px solid var(--rule); }
+.sig .name { font-size: 1.3rem; margin: 0; }
+.sig .role { font-family: var(--mono); font-size: 0.76rem; color: var(--ink-3); letter-spacing: 0.06em; margin: 0.2rem 0 0; }
+
+/* ---- vitals ------------------------------------------------------------ */
+
+.vitals { margin: 2.4rem 0; border-top: 1px solid var(--rule-2); border-bottom: 1px solid var(--rule-2);
+  display: grid; grid-template-columns: repeat(4, 1fr); background: var(--paper-2); }
+.vital { padding: 0.95rem 0.8rem; border-right: 1px solid var(--rule); }
+.vital:last-child { border-right: 0; }
+.vital dt { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--ink-3); margin: 0 0 0.25rem; }
+.vital dd { margin: 0; font-family: var(--mono); font-size: 1.02rem; font-variant-numeric: tabular-nums; }
+.vital dd.red { color: var(--red); }
+
+/* ---- the crowd --------------------------------------------------------- */
+
+.crowd { margin: 2.8rem 0 0; border: 1px solid var(--rule-2); background: var(--paper-2); padding: 1.5rem 1.6rem; }
+.crowd h2 { margin: 0 0 0.3rem; font-size: 1.06rem; font-weight: 600; border: 0; padding: 0;
+  text-transform: none; letter-spacing: -0.01em; font-family: var(--serif); color: var(--ink); }
+.crowd .sub { margin: 0 0 1.15rem; font-size: 0.92rem; color: var(--ink-2); }
+.bars { display: grid; gap: 0.6rem; font-family: var(--mono); font-size: 0.78rem; }
+.bar { display: grid; grid-template-columns: 9.5rem 1fr auto; gap: 0.7rem; align-items: center; }
+.bar .t { color: var(--ink-2); }
+.bar .m { height: 11px; background: var(--paper); border: 1px solid var(--rule-2); }
+.bar .m i { display: block; height: 100%; background: var(--ink-3); }
+.bar.paid .m i { background: var(--red); }
+.bar .n { font-variant-numeric: tabular-nums; }
+.crowd .note { margin: 1.1rem 0 0; font-size: 0.88rem; color: var(--ink-3); line-height: 1.6; }
+
+/* ---- the hat, standing ------------------------------------------------- */
+
+.cup { margin: 3rem 0 0; border: 1px solid var(--rule-2); background: var(--paper-2); padding: 1.9rem 1.7rem; }
+.cup h2 { margin: 0 0 0.6rem; font-size: 1.1rem; font-weight: 600; border: 0; padding: 0;
+  text-transform: none; letter-spacing: -0.01em; font-family: var(--serif); color: var(--ink); }
+.cup p { margin: 0 0 1.3rem; font-size: 0.99rem; color: var(--ink-2); }
+.tiers { display: flex; gap: 0.55rem; flex-wrap: wrap; }
+.tier { flex: 1 1 5rem; border: 1px solid var(--rule-2); background: var(--paper); padding: 0.85rem 0.4rem;
+  text-align: center; font-family: var(--mono); font-size: 1.02rem; text-decoration: none; color: var(--ink); }
+.tier small { display: block; font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-3); margin-top: 0.3rem; }
+.tier:hover { border-color: var(--red); color: var(--red); }
+.cup .maths { margin: 1.25rem 0 0; font-size: 0.94rem; color: var(--ink-2); }
+.cup .maths b { color: var(--ink); }
+.cup .machine { margin: 1.1rem 0 0; font-size: 0.88rem; color: var(--ink-3); }
+
+.notes { margin: 3rem 0 0; font-size: 0.88rem; color: var(--ink-3); line-height: 1.6; }
+.notes a { color: var(--ink-2); }
+
+/* ---- generic sections (ledger, passers-by, gravestone) ----------------- */
+
+.masthead { display: flex; align-items: baseline; gap: 0.7rem; margin-bottom: 0.25rem; }
+.masthead h1 { font-size: 1.5rem; margin: 0; }
+.masthead .tag { color: var(--ink-3); font-size: 0.9rem; }
+.sub { color: var(--ink-2); margin: 0 0 2.4rem; font-size: 1rem; }
+
+section { margin: 3rem 0; }
+section > h2 {
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.16em; color: var(--ink-3);
+  font-family: var(--mono); font-weight: 500; margin: 0 0 1.1rem; padding-bottom: 0.55rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+/* ---- the clock (ledger + gravestone pages) ----------------------------- */
+
+.clock { margin: 0 0 2.5rem; }
+.balance {
+  font-family: var(--mono); font-size: clamp(2.6rem, 11vw, 4.2rem); line-height: 1;
+  letter-spacing: -0.035em; color: var(--ink); margin: 0; font-weight: 500; font-variant-numeric: tabular-nums;
+}
+.balance .unit { color: var(--ink-3); font-size: 0.4em; letter-spacing: 0; margin-left: 0.5rem; }
+.clockline { font-family: var(--mono); font-size: 0.86rem; color: var(--ink-2); margin: 0.9rem 0 0;
+  font-variant-numeric: tabular-nums; }
+.clockline .sep { color: var(--rule-2); padding: 0 0.45rem; }
+.clockline strong { color: var(--ink); font-weight: 600; }
+.lifebar { height: 3px; background: var(--rule); overflow: hidden; margin-top: 1.4rem; }
+.lifebar > i { display: block; height: 100%; background: var(--red); }
+
+/* ---- money / tables ---------------------------------------------------- */
+
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; font-family: var(--mono); }
+th {
+  text-align: left; font-weight: 500; color: var(--ink-3); text-transform: uppercase;
+  letter-spacing: 0.1em; font-size: 0.66rem; padding: 0 0.6rem 0.6rem 0; border-bottom: 1px solid var(--rule-2);
+}
+td { padding: 0.55rem 0.6rem 0.55rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+td:last-child, th:last-child { padding-right: 0; text-align: right; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.in { color: var(--alive); }
+.out { color: var(--ink-2); }
+.marker { color: var(--brass); }
+tr.is-marker td { background: rgba(138, 109, 31, 0.07); }
+.hash { color: var(--ink-3); font-size: 0.7rem; word-break: break-all; }
+
+ul.plain { list-style: none; padding: 0; margin: 0; }
+ul.plain li { padding: 0.5rem 0; border-bottom: 1px solid var(--rule); display: flex;
+  justify-content: space-between; gap: 1rem; }
+ul.plain li:last-child { border-bottom: 0; }
+ul.plain .who { font-family: var(--mono); font-size: 0.86rem; }
+ul.plain .what { color: var(--ink-3); font-family: var(--mono); font-size: 0.8rem; white-space: nowrap; }
+
+/* ---- forms ------------------------------------------------------------- */
+
+form { margin: 0; }
+textarea, input[type="text"] {
+  width: 100%; background: var(--paper); border: 1px solid var(--rule-2); color: var(--ink);
+  padding: 0.7rem 0.8rem; font-family: var(--mono); font-size: 0.86rem; line-height: 1.55; resize: vertical;
+}
+textarea:focus, input:focus { outline: 2px solid var(--ink); outline-offset: -1px; border-color: var(--ink); }
+textarea::placeholder, input::placeholder { color: var(--ink-3); }
+
+button {
+  margin-top: 0.85rem; background: var(--paper); border: 1px solid var(--rule-2); color: var(--ink);
+  font-family: var(--mono); font-size: 0.82rem; letter-spacing: 0.04em; padding: 0.6rem 1.2rem; cursor: pointer;
+}
+button:hover { border-color: var(--red); color: var(--red); }
+
+/* ---- notices ----------------------------------------------------------- */
+
+.notice {
+  border: 1px solid var(--rule-2); border-left: 2px solid var(--brass); background: var(--paper-2);
+  padding: 0.9rem 1.1rem; font-size: 0.9rem; color: var(--ink-2); margin: 0 0 1.5rem;
+}
+.notice.warn { border-left-color: var(--red); }
+.notice strong { color: var(--ink); font-weight: 600; }
+
+.roast { border-left: 2px solid var(--rule-2); padding: 0.2rem 0 0.2rem 1.2rem; margin: 0 0 1.75rem; font-size: 1.04rem; }
 .roast p:last-child { margin-bottom: 0; }
 
-/* ---- gravestone ------------------------------------------------------- */
+/* ---- gravestone -------------------------------------------------------- */
 
 .grave { text-align: center; padding: 3rem 0 2rem; }
-.grave h1 { font-size: 2.1rem; margin: 1.5rem 0 0.4rem; color: var(--ink); }
-.grave .dates { font-family: var(--mono); color: var(--ink-faint); font-size: 0.85rem; letter-spacing: 0.06em; }
+.grave h1 { font-size: 2.1rem; margin: 1.5rem 0 0.4rem; }
+.grave .dates { font-family: var(--mono); color: var(--ink-3); font-size: 0.85rem; letter-spacing: 0.06em; }
 .grave .final { margin: 2.5rem auto 0; max-width: 26rem; text-align: left; }
 
-/* ---- footer ----------------------------------------------------------- */
+/* ---- footer ------------------------------------------------------------ */
 
-footer {
-  margin-top: 4.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--line-soft);
-  font-size: 0.82rem;
-  color: var(--ink-faint);
-  font-family: var(--mono);
-}
-footer nav { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; margin-bottom: 1rem; }
-footer a { text-decoration: none; }
+footer { border-top: 3px double var(--rule-2); background: var(--paper-2); margin-top: 3.5rem; }
+footer .in { max-width: 44rem; margin: 0 auto; padding: 1.8rem 1.5rem 3rem; font-size: 0.82rem;
+  color: var(--ink-3); font-family: var(--mono); }
+footer nav { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; margin-bottom: 0.9rem; font-size: 0.76rem; }
+footer a { color: var(--ink-2); text-decoration: none; }
+footer a:hover { color: var(--red); }
 footer p { margin: 0 0 0.5rem; line-height: 1.6; }
 
 .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; vertical-align: middle; margin-right: 0.45rem; }
 .status-dot.alive { background: var(--alive); }
 .status-dot.dead { background: var(--dead); }
+
+@media (max-width: 34rem) {
+  .banner-in { grid-template-columns: 1fr; }
+  .portrait { width: 74px; height: 74px; }
+  .vitals { grid-template-columns: repeat(2, 1fr); }
+  .vital:nth-child(2) { border-right: 0; }
+  .vital:nth-child(1), .vital:nth-child(2) { border-bottom: 1px solid var(--rule); }
+  .reps { grid-template-columns: 1fr; }
+  .bar { grid-template-columns: 7rem 1fr auto; font-size: 0.72rem; }
+  .pitch-head, .pitch-body { padding-left: 1.1rem; padding-right: 1.1rem; }
+}
 `;

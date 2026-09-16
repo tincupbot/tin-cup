@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import type { Db, DbStatement } from "../src/db.ts";
-import { ensureSchema, resetSchemaCache } from "../src/db.ts";
+import { applyMigrations } from "../scripts/migrations.ts";
 import type { Env } from "../src/env.ts";
 
 /**
@@ -47,13 +47,16 @@ export class NodeDb implements Db {
   }
 }
 
-/** A fresh in-memory database with the schema applied. */
+/**
+ * A fresh in-memory database with the schema applied.
+ *
+ * The schema comes from `migrations/*.sql` — the same files wrangler applies to
+ * D1 — so a test can never pass against a schema that isn't the shipped one.
+ */
 export async function freshDb(): Promise<NodeDb> {
-  const db = new NodeDb(new DatabaseSync(":memory:"));
-  resetSchemaCache();
-  await ensureSchema(db, true);
-  resetSchemaCache();
-  return db;
+  const sqlite = new DatabaseSync(":memory:");
+  applyMigrations(sqlite);
+  return new NodeDb(sqlite);
 }
 
 /** A minimal Env. Overrides win; the defaults keep every live path switched off. */

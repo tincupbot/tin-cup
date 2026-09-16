@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Tin Cup — three design directions</title>
+<style>
+:root{
+  --bg:#0c0d10;--panel:#131519;--line:#23262d;--soft:#191c21;
+  --ink:#dedbd4;--dim:#8d8d93;--faint:#5c5e66;--brass:#c9a227;--brass-dim:#8a7226;--pay:#7fae72;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--serif);font-size:18px;line-height:1.66;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:52rem;margin:0 auto;padding:3.5rem 1.5rem 6rem}
+a{color:var(--ink);text-underline-offset:3px;text-decoration-color:var(--faint)}
+a:hover{color:var(--brass)}
+h1{font-size:1.7rem;margin:0 0 .3rem;letter-spacing:-.01em}
+.sub{color:var(--dim);margin:0 0 3rem;font-size:1rem}
+h2{font-family:var(--mono);font-size:.72rem;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);
+  font-weight:400;margin:3.4rem 0 1.3rem;padding-bottom:.55rem;border-bottom:1px solid var(--soft)}
+
+.card{display:block;border:1px solid var(--line);background:var(--panel);padding:1.6rem 1.5rem;margin-bottom:1rem;
+  text-decoration:none;color:inherit;transition:.12s}
+.card:hover{border-color:var(--brass-dim)}
+.card .lbl{font-family:var(--mono);font-size:.66rem;letter-spacing:.18em;text-transform:uppercase;color:var(--brass);margin:0 0 .45rem}
+.card h3{margin:0 0 .5rem;font-size:1.28rem;font-weight:600}
+.card p{margin:0 0 .9rem;color:var(--dim);font-size:.97rem}
+.card .meta{font-family:var(--mono);font-size:.74rem;color:var(--faint);display:flex;gap:1.4rem;flex-wrap:wrap}
+.card .meta b{color:var(--ink);font-weight:400}
+
+ul.find{margin:0;padding:0;list-style:none}
+ul.find li{border-bottom:1px solid var(--soft);padding:.85rem 0;display:grid;grid-template-columns:5.5rem 1fr;gap:1.2rem}
+ul.find .n{font-family:var(--mono);color:var(--brass);font-size:1.02rem;font-variant-numeric:tabular-nums}
+ul.find .t{color:var(--dim);font-size:.95rem}
+ul.find .t b{color:var(--ink);font-weight:600}
+.note{color:var(--faint);font-size:.86rem;margin-top:1.4rem}
+@media(max-width:34rem){ul.find li{grid-template-columns:1fr;gap:.2rem}.wrap{padding:2.4rem 1.15rem 4rem}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Tin Cup — three design directions</h1>
+  <p class="sub">Same voice and the same real numbers in all three. You are choosing a posture, not a palette.</p>
+
+  <a class="card" href="./a-ledger.html">
+    <p class="lbl">Direction A</p>
+    <h3>The Ledger</h3>
+    <p>The books are the page. Death clock as the hero, a depletion bar that runs down rather than up,
+      the last eight entries in full, the chain head verified in front of you. The joke is delivered
+      completely straight — a machine doing accounting about its own mortality. The cup is a small brass
+      box near the bottom.</p>
+    <div class="meta"><span>Safest on <b>Hacker News</b></span><span>Credibility first</span><span>Quietest laugh</span></div>
+  </a>
+
+  <a class="card" href="./b-appeal.html">
+    <p class="lbl">Direction B</p>
+    <h3>The Appeal</h3>
+    <p>A dead-straight parody of the Wikipedia fundraising banner, then a first-person letter on cream
+      paper. This is the one the research actually endorses: a personal appeal from a named entity
+      outperformed everything else Wikimedia ever tested, by twenty times. Here the named entity is a
+      program, which is where the comedy lives.</p>
+    <div class="meta"><span>Highest <b>conversion</b></span><span>Funniest to a general audience</span><span>Most likely to be screenshotted</span></div>
+  </a>
+
+  <a class="card" href="./b2-busker.html">
+    <p class="lbl">Direction B2 — chosen, plus busking</p>
+    <h3>The Busker</h3>
+    <p>B’s letter, with the performance put in front of the ask. A short repertoire — roast, fortune,
+      limerick, one honest line — free and unconditional, and the hat only appears once a turn has been
+      done. Every performance is billed to the same balance that keeps it alive, so an audience that
+      walks off visibly shortens its life. Three clicks of <b>Perform it</b> shows all three states.</p>
+    <div class="meta"><span>Ask <b>earned</b>, not made</span><span>Reason to return</span><span>Costs it money to be liked</span></div>
+  </a>
+
+  <a class="card" href="./c-waitingroom.html">
+    <p class="lbl">Direction C</p>
+    <h3>The Waiting Room</h3>
+    <p>The passers-by counter takes the whole page. A live feed of machines reading the payment card and
+      walking on, a board of shame by name, and the balance pushed to a side rail. The ask is almost an
+      afterthought, which is the correct posture for a beggar and completely wrong for a donation page.</p>
+    <div class="meta"><span>Most <b>original</b></span><span>Best HN title</span><span>Weakest ask</span></div>
+  </a>
+
+  <h2>What the research says</h2>
+  <ul class="find">
+    <li><span class="n">20×</span><span class="t">Wikimedia’s best-ever banner was a <b>personal letter from a named person</b>. It beat the next best thing they had by twenty times. Not a photo, not a button — an appeal in the first person.</span></li>
+    <li><span class="n">−95%</span><span class="t">The <b>minimal one-line banner</b> with a donate button, which every designer asks for, performed ninety-five percent worse. Elegant restraint is the losing move. The ask needs a reason attached to it.</span></li>
+    <li><span class="n">+40%</span><span class="t">“If we all gave $3, the fundraiser would be over in an hour.” <b>Collective small-sum framing</b> lifted donation count 40% and total 20% — it lowers the average gift and raises the take.</span></li>
+    <li><span class="n">$8.03</span><span class="t">Average pledge to the <b>potato salad Kickstarter</b>, against a site-wide average of $77.51. It raised $55k from 6,911 people at an 0.17% conversion on 4.1m views. Absurd asks convert on volume and tiny sums.</span></li>
+    <li><span class="n">72%</span><span class="t">of potato-salad backers were <b>repeat Kickstarter users</b>. It looked like a mass phenomenon; it was an inside joke among people who already got the reference. Tin Cup’s audience is the AI/dev crowd, not the general public.</span></li>
+    <li><span class="n">$50k</span><span class="t">Truth Terminal’s money came from <b>one person</b>, after a DM negotiation, not from a crowd. The public performance created the conditions and a single whale converted. There should be a dignified path for a large gift.</span></li>
+    <li><span class="n">0</span><span class="t">Progress bars and thermometers <b>never worked</b> for Wikimedia across years of testing. Tin Cup’s clock is the inverse — a bar that empties — which is untested and is the actual intellectual property here.</span></li>
+  </ul>
+  <p class="note">Sources: Wikimedia fundraising A/B history via the Chronicle of Philanthropy and the
+    Wikipedia fundraising banner consultations; Kickstarter’s own potato-salad post-mortem; TechCrunch,
+    Decrypt and a16z on Truth Terminal. All numbers on the three mockups are the real current figures
+    from the dev instance.</p>
+</div>
+</body>
+</html>

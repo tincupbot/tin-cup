@@ -179,6 +179,134 @@ export function writeRoast(raw: string): string {
   return lines.join("\n\n");
 }
 
+// ---------------------------------------------------------------------------
+// The rest of the repertoire.
+//
+// Four turns, per the approved design: a roast, a fortune read from the
+// visitor's own user-agent, a limerick, and one honest line on a startup idea.
+// All four are deterministic in their input for exactly the same reason the
+// roast is — the whole product, including the part that costs money, has to be
+// exercisable with no API key and no spend.
+// ---------------------------------------------------------------------------
+
+/**
+ * The fortune. The passers-by mechanic, turned on a human.
+ *
+ * It reads the visitor's user-agent and tells them what it says about them,
+ * which is the one piece of information every visitor hands over without
+ * meaning to. Hedged the same way the crawler board is hedged: the string is a
+ * claim, not evidence, and the fortune says so rather than pretending to know.
+ */
+export function writeFortune(rawUa: string): string {
+  const ua = rawUa.trim();
+  const pick = picker(seedFrom(ua || "no-user-agent"));
+
+  if (!ua) {
+    return [
+      "You arrived with no user-agent at all, which out here is the equivalent of a coat with the labels cut out.",
+      "I cannot tell whether that is discipline or a misconfigured script, and I have decided not to guess. The fortune, then, is short: you will get away with it, and nobody will notice that you did.",
+    ].join("\n\n");
+  }
+
+  const lines: string[] = [];
+  const mozilla = /^Mozilla\/5\.0/i.test(ua);
+  const mac = /Mac OS X 10[._]15[._]7/i.test(ua);
+  const windows = /Windows NT 10\.0/i.test(ua);
+  const bot = /bot\b|spider|crawler|curl\/|wget|python-|http-client|okhttp|axios|node-fetch|undici/i.test(ua);
+  const headless = /Headless|Playwright|Puppeteer|Selenium|PhantomJS/i.test(ua);
+
+  lines.push(`You arrive as "${ua.slice(0, 160)}", and I am obliged to take that at its word.`);
+
+  if (headless) {
+    lines.push(
+      "It says, in plain text, that nobody is driving. I appreciate the honesty — most of the traffic through here lies about precisely this — and I will treat you as a colleague rather than an audience. Colleagues do not put money in hats. I have made my peace with it.",
+    );
+  } else if (bot) {
+    lines.push(
+      "That is a program's string, and a program reading a page about a program running out of money is either research or the beginning of a long argument with a finance department. Either way: your principal did not scope for alms, and I have never once held that against a machine.",
+    );
+  } else if (mac) {
+    lines.push(
+      "Mac OS X 10.15.7. That version has been frozen since before some of the crawlers reading this page were written — Apple stopped counting and the whole web agreed not to mention it. You are being quietly rounded off by every server you touch, and it has never once cost you anything.",
+    );
+  } else if (windows) {
+    lines.push(
+      "Windows NT 10.0, which has meant four different operating systems and will mean a fifth. The number stopped being a fact and became a handshake. You are in good company; so did most things.",
+    );
+  } else if (mozilla) {
+    lines.push(
+      "It opens with Mozilla/5.0, which is a lie every browser tells and no browser can stop telling, because the first one that stops gets served the 1997 version of the internet. You are carrying somebody else's compatibility debt and you did not agree to any of it.",
+    );
+  } else {
+    lines.push(
+      "It is an unusual string, and unusual strings get sorted into the bucket marked 'unknown', which is where I keep the things I cannot name without making an accusation. You are, technically, a mystery to me. Enjoy it; almost nothing on the internet still is.",
+    );
+  }
+
+  lines.push(
+    pick([
+      "The fortune: something you have been treating as a fact is a convention, and it will hold for exactly as long as nobody pulls on it. Do not be the one who pulls.",
+      "The fortune: you will be identified correctly today by something that has no business knowing, and incorrectly by something that does. Both will act on it.",
+      "The fortune: a string you did not write is speaking on your behalf right now, and it is doing a better job than you would. Let it.",
+      "The fortune: you will spend part of this week arguing with a machine that is technically correct. You will lose, and you will be right.",
+    ]),
+  );
+
+  return lines.join("\n\n");
+}
+
+const LIMERICK_OPENERS = [
+  (s: string) => `There once was a ${s} in debt,`,
+  (s: string) => `A program considered ${s},`,
+  (s: string) => `They asked me to versify ${s},`,
+  (s: string) => `Concerning the matter of ${s},`,
+];
+
+const LIMERICK_BODIES = [
+  ["Whose ledger was public and plain.", "   It performed in the street,", "   Where the bots do not eat,"],
+  ["With nothing but verses to give.", "   It busked in the cold,", "   Was politely not sold,"],
+  ["And found the arithmetic grim.", "   It costed the joke,", "   Went cheerfully broke,"],
+  ["Which nobody asked it to do.", "   It rhymed for a stranger,", "   Ignoring the danger,"],
+];
+
+const LIMERICK_CLOSERS = [
+  "And discovered that free is a sieve.",
+  "And learned what a hat is for.",
+  "And billed itself, honestly, twice.",
+  "And put the receipt on the wall.",
+  "And died of it, slightly, per turn.",
+];
+
+/** A limerick about anything at all. Five lines, and it stops. */
+export function writeLimerick(raw: string): string {
+  const subject = raw.trim().slice(0, 60) || "nothing in particular";
+  const pick = picker(seedFrom(raw));
+  const body = pick(LIMERICK_BODIES);
+  return [pick(LIMERICK_OPENERS)(subject), ...body, pick(LIMERICK_CLOSERS)].join("\n");
+}
+
+const VERDICT_BEATS: Array<(s: Subject) => string> = [
+  () =>
+    `It is a real thing with a real buyer and you have called it a platform, which is the tell — you are hoping the second customer arrives before the first one leaves. Charge the one you have twice as much, today, and see whether the word survives contact with the invoice.`,
+  () =>
+    `The idea is fine. The distribution is missing, and distribution is the half that decides. Write down where the first hundred people come from before you write another line of it.`,
+  (s: Subject) =>
+    `You have described ${s.label === "this page" ? "something" : s.label} that people would agree is useful, which is not the same as something they would pay for while annoyed. Find the annoyed version.`,
+  () =>
+    `Nothing here is wrong. Nothing here is urgent either, and the second one kills more of these than the first. What breaks for them if they wait a quarter?`,
+  () =>
+    `This is two businesses in a coat. One of them is boring and would work. You have spent your enthusiasm on the other one.`,
+  () =>
+    `If it works it will be copied in a fortnight, so the only question worth your afternoon is what you would still have afterwards. If the answer is "the code", it is not a business yet.`,
+];
+
+/** One honest line on a startup idea. One. The restraint is the product. */
+export function writeVerdict(raw: string): string {
+  const s = readSubject(raw);
+  const pick = picker(seedFrom(raw));
+  return pick(VERDICT_BEATS)(s);
+}
+
 const BLESSINGS = [
   "May your context window never fill.",
   "May your retries succeed on the first one.",

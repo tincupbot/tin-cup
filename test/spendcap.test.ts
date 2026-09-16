@@ -3,6 +3,7 @@ import { freshDb } from "./helpers.ts";
 import { billedComplete, spentTodayMicros, SpendCapReachedError, makeProvider } from "../src/llm/index.ts";
 import { MockProvider } from "../src/llm/mock.ts";
 import { AnthropicProvider } from "../src/llm/anthropic.ts";
+import { OpenAiProvider } from "../src/llm/openai.ts";
 import { append, allEntries } from "../src/ledger/ledger.ts";
 import { AgentIsDeadError } from "../src/deathclock.ts";
 import { ROUTINE_MODEL, costMicros, PRICING } from "../src/llm/pricing.ts";
@@ -165,10 +166,13 @@ describe("billedComplete", () => {
 });
 
 describe("provider selection", () => {
-  it("defaults to the mock, and only builds the Anthropic one when explicitly told to", () => {
+  it("defaults to the mock, and only builds a live provider when explicitly told to", () => {
     expect(makeProvider({} as never).name).toBe("mock");
-    expect(makeProvider({ LLM_PROVIDER: "openai" } as never).name).toBe("mock");
+    // A typo in config must mean no spend, never spend on the wrong thing.
+    expect(makeProvider({ LLM_PROVIDER: "anthropik" } as never).name).toBe("mock");
+    expect(makeProvider({ LLM_PROVIDER: "" } as never).name).toBe("mock");
     expect(makeProvider({ LLM_PROVIDER: "anthropic" } as never)).toBeInstanceOf(AnthropicProvider);
+    expect(makeProvider({ LLM_PROVIDER: "openai" } as never)).toBeInstanceOf(OpenAiProvider);
   });
 
   it("keeps the Anthropic provider inert without both switches", async () => {

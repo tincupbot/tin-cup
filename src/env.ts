@@ -10,8 +10,14 @@ export type Env = {
 
   SITE_NAME?: string;
   SITE_URL?: string;
+  SOURCE_URL?: string;
   OPERATOR_CONTACT?: string;
   CONTACT_NOTE?: string;
+
+  /** Seconds the homepage may sit in the edge cache. 0 disables caching. */
+  HOME_CACHE_SECONDS?: string;
+  /** Raw passers-by log sample rate: one request in N. Card reads ignore it. */
+  PASSERSBY_SAMPLE_ONE_IN?: string;
 
   BURN_FLOOR_MICROS?: string;
   BURN_WINDOW_DAYS?: string;
@@ -33,11 +39,25 @@ export type Env = {
   LLM_PROVIDER?: string;
   LLM_LIVE_CALLS_ENABLED?: string;
 
+  /** Ko-fi page handle, e.g. "tincupbot". Absent means the hat has no destination yet. */
+  KOFI_HANDLE?: string;
+
   // --- Secrets. Never committed, never logged, never rendered. ---
   /** Ko-fi webhook verification token. Absent locally; the webhook rejects when absent. */
   KOFI_VERIFICATION_TOKEN?: string;
   /** Absent. The Anthropic provider is inert without it and stays that way. */
   ANTHROPIC_API_KEY?: string;
+  /** Absent. The OpenAI provider is inert without it and stays that way. */
+  OPENAI_API_KEY?: string;
+  /**
+   * Shared secret for the operator-only endpoints.
+   *
+   * Absent means those endpoints do not exist — they 404 rather than 401, so an
+   * unconfigured deployment cannot be probed for whether it has an admin
+   * surface at all. There is no default and there must never be one: the
+   * scheduled run spends money, and /outbox is a window onto unsent drafts.
+   */
+  ADMIN_TOKEN?: string;
 };
 
 function num(value: string | undefined, fallback: number): number {
@@ -62,6 +82,67 @@ export function siteUrl(env: Env): string {
 
 export function roastRateLimit(env: Env): number {
   return num(env.ROAST_RATE_LIMIT, 5);
+}
+
+export function sourceUrl(env: Env): string {
+  return env.SOURCE_URL ?? "https://github.com/tincupbot/tin-cup";
+}
+
+/**
+ * Where the hat actually is, or null if there is nowhere to send money yet.
+ *
+ * Null is a supported state and the page says so out loud rather than showing a
+ * dead button: an ask that goes nowhere is the one dishonest thing this site
+ * could do. The handle is public by definition, so it lives in config rather
+ * than in the secrets block.
+ */
+export function kofiUrl(env: Env): string | null {
+  const handle = env.KOFI_HANDLE?.trim();
+  if (!handle) return null;
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(handle)) return null;
+  return `https://ko-fi.com/${handle}`;
+}
+
+/**
+ * How long the homepage may be served from the edge cache.
+ *
+ * The page is the same bytes for every visitor, and it is the one page that
+ * gets linked. Fifteen seconds is short enough that the death clock still looks
+ * live and long enough that a front-page spike reads the database a few times a
+ * minute rather than a few thousand. Set to 0 to turn it off.
+ */
+export function homeCacheSeconds(env: Env): number {
+  const raw = env.HOME_CACHE_SECONDS;
+  if (raw === undefined) return 15;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.min(n, 60) : 15;
+}
+
+export function passersbySampleOneIn(env: Env): number {
+  return num(env.PASSERSBY_SAMPLE_ONE_IN, 10);
+}
+
+/**
+ * The operator-only endpoints: `/__scheduled` (spends money) and `/outbox`
+ * (unsent drafts). Deny by default — no token configured means no endpoint.
+ */
+export function adminToken(env: Env): string | null {
+  const t = env.ADMIN_TOKEN?.trim();
+  return t ? t : null;
+}
+
+export const ADMIN_HEADER = "x-tincup-admin";
+
+/**
+ * Constant-time-ish comparison. Not a defence against a local attacker with a
+ * stopwatch — Workers has no `timingSafeEqual` — but it removes the trivial
+ * early-exit and costs nothing.
+ */
+export function tokenMatches(expected: string, given: string | null | undefined): boolean {
+  if (!given || given.length !== expected.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ given.charCodeAt(i);
+  return diff === 0;
 }
 
 export type SpendCaps = {

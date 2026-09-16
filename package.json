@@ -5,17 +5,25 @@
   "type": "module",
   "description": "An agent that sits in the machine-readable gutter with a tin cup.",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --port 8788",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint . && npm run guard",
+    "guard": "node --experimental-strip-types scripts/guard.ts",
+    "db:migrate": "wrangler d1 migrations apply tincup --local",
+    "db:reset": "node --experimental-strip-types scripts/reset-dev.ts",
     "seed:dev": "node --experimental-strip-types scripts/seed-dev.ts",
-    "smoke": "bash scripts/smoke.sh"
+    "smoke": "bash scripts/smoke.sh",
+    "check": "npm run typecheck && npm run lint && npm test"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20260911.1",
+    "@eslint/js": "^9.39.5",
     "@types/node": "^26.6.0",
+    "eslint": "^9.39.5",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^3.0.5",
     "wrangler": "^4.131.2"
   },

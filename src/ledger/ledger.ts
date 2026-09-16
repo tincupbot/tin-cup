@@ -1,5 +1,6 @@
 import type { Db } from "../db.ts";
 import { GENESIS_PREV_HASH, entryHash, hashPreimage } from "./hash.ts";
+import { readLedgerState, writeLedgerState, rebuildLedgerState, type LedgerState } from "./state.ts";
 
 /**
  * Money in. `dev_fixture` is the seeded-demo kind and never means real money —
@@ -72,13 +73,48 @@ function rowToEntry(row: LedgerRow): LedgerEntry {
 
 export class AppendOnlyViolation extends Error {}
 
+/** Raised when an append kept losing the race for the chain tip. */
+export class LedgerContentionError extends Error {
+  constructor(readonly attempts: number) {
+    super(`ledger append lost the race for the chain tip ${attempts} times`);
+    this.name = "LedgerContentionError";
+  }
+}
+
+/**
+ * How many times an append will re-read the tip and try again.
+ *
+ * Five is generous. Each retry only loses if another writer committed in the
+ * microseconds between our tip read and our insert, and D1 serialises writes,
+ * so losing five in a row means something other than contention is wrong and
+ * failing loudly is the correct outcome.
+ */
+export const APPEND_MAX_ATTEMPTS = 5;
+
+/**
+ * The UNIQUE index on `hash` is what turns a concurrent append into a loud
+ * failure instead of a silent fork, so its error message is load-bearing.
+ * SQLite and D1 both say "UNIQUE constraint failed: ledger.hash".
+ *
+ * Deliberately narrow: a collision on `ledger.id` means a caller passed an id
+ * that already exists, which retrying would never fix and which must surface.
+ */
+function isTipRace(err: unknown): boolean {
+  return /UNIQUE constraint failed:\s*ledger\.hash/i.test(String((err as Error)?.message ?? err));
+}
+
 /**
  * Append one entry. This is the only write path to the ledger in the codebase.
  *
- * Not safe against concurrent writers by construction — two simultaneous appends
- * could read the same tip. The UNIQUE index on `hash` makes the loser fail loudly
- * rather than silently forking the chain, which is the behaviour we want. At this
- * project's traffic, the race is theoretical; see README "Known limits".
+ * Two writers can read the same chain tip; the UNIQUE index on `hash` means the
+ * loser's insert is refused rather than forking the chain. Before the retry
+ * below existed, nothing caught that — so a donation arriving during an
+ * inference write returned a 500 and a *money event was dropped*. That is the
+ * worst failure this project has: not a wrong number, a missing one.
+ *
+ * The loser now re-reads the tip and tries again. Nothing else changes — same
+ * id, same timestamp, same metadata — so a retry produces the same entry in a
+ * different place in the chain, which is exactly what losing the race means.
  */
 export async function append(db: Db, entry: NewEntry): Promise<LedgerEntry> {
   if (!Number.isInteger(entry.amount_micros) || entry.amount_micros < 0) {
@@ -92,47 +128,84 @@ export async function append(db: Db, entry: NewEntry): Promise<LedgerEntry> {
   if (entry.direction === "in" && !isIn) throw new Error(`kind ${entry.kind} is not an 'in' kind`);
   if (entry.direction === "out" && !isOut) throw new Error(`kind ${entry.kind} is not an 'out' kind`);
 
-  const tip = await db
-    .prepare(`SELECT hash FROM ledger ORDER BY seq DESC LIMIT 1`)
-    .first<{ hash: string }>();
+  // Fixed across retries. Only prev_hash — and therefore hash — moves.
+  const id = entry.id ?? crypto.randomUUID();
+  const ts = entry.ts ?? new Date().toISOString();
+  const currency = entry.currency ?? "USD";
+  const metadata = entry.metadata ?? {};
+  const metadataJson = JSON.stringify(metadata);
 
-  const payload = {
-    id: entry.id ?? crypto.randomUUID(),
-    ts: entry.ts ?? new Date().toISOString(),
-    direction: entry.direction,
-    amount_micros: entry.amount_micros,
-    currency: entry.currency ?? "USD",
-    kind: entry.kind,
-    description: entry.description,
-    metadata: entry.metadata ?? {},
-    prev_hash: tip?.hash ?? GENESIS_PREV_HASH,
-  };
+  for (let attempt = 1; attempt <= APPEND_MAX_ATTEMPTS; attempt++) {
+    const state = await readLedgerState(db);
 
-  const hash = await entryHash(payload);
+    const payload = {
+      id,
+      ts,
+      direction: entry.direction,
+      amount_micros: entry.amount_micros,
+      currency,
+      kind: entry.kind,
+      description: entry.description,
+      metadata,
+      prev_hash: state.head,
+    };
 
-  await db
-    .prepare(
-      `INSERT INTO ledger (id, ts, direction, amount_micros, currency, kind, description, metadata, prev_hash, hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(
-      payload.id,
-      payload.ts,
-      payload.direction,
-      payload.amount_micros,
-      payload.currency,
-      payload.kind,
-      payload.description,
-      // Stored canonically so the text in the column round-trips to the hashed object.
-      JSON.stringify(payload.metadata),
-      payload.prev_hash,
-      hash,
-    )
-    .run();
+    const hash = await entryHash(payload);
 
-  const row = await db.prepare(`SELECT * FROM ledger WHERE hash = ?`).bind(hash).first<LedgerRow>();
-  if (!row) throw new Error("append succeeded but the entry could not be read back");
-  return rowToEntry(row);
+    try {
+      await db
+        .prepare(
+          `INSERT INTO ledger (id, ts, direction, amount_micros, currency, kind, description, metadata, prev_hash, hash)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          payload.id,
+          payload.ts,
+          payload.direction,
+          payload.amount_micros,
+          payload.currency,
+          payload.kind,
+          payload.description,
+          // Stored canonically so the text in the column round-trips to the hashed object.
+          metadataJson,
+          payload.prev_hash,
+          hash,
+        )
+        .run();
+    } catch (err) {
+      if (isTipRace(err) && attempt < APPEND_MAX_ATTEMPTS) continue;
+      if (isTipRace(err)) throw new LedgerContentionError(attempt);
+      throw err;
+    }
+
+    const row = await db.prepare(`SELECT * FROM ledger WHERE hash = ?`).bind(hash).first<LedgerRow>();
+    if (!row) throw new Error("append succeeded but the entry could not be read back");
+
+    await advanceLedgerState(db, state, row);
+    return rowToEntry(row);
+  }
+
+  throw new LedgerContentionError(APPEND_MAX_ATTEMPTS);
+}
+
+/**
+ * Roll the materialised summary forward by one entry.
+ *
+ * If this write is lost the summary goes stale, and `readLedgerState` notices
+ * on the next read because the recorded tip stops matching the real one. So
+ * the failure mode is a rebuild, not a wrong balance.
+ */
+async function advanceLedgerState(db: Db, previous: LedgerState, row: LedgerRow): Promise<void> {
+  const isFixture = row.kind === "dev_fixture" || String(row.metadata).includes(`"fixture":true`);
+  await writeLedgerState(db, {
+    seq: row.seq,
+    head: row.hash,
+    entries: previous.entries + 1,
+    total_in_micros: previous.total_in_micros + (row.direction === "in" ? row.amount_micros : 0),
+    total_out_micros: previous.total_out_micros + (row.direction === "out" ? row.amount_micros : 0),
+    first_ts: previous.first_ts ?? row.ts,
+    has_fixture: previous.has_fixture || isFixture,
+  });
 }
 
 export async function allEntries(db: Db): Promise<LedgerEntry[]> {
@@ -205,8 +278,33 @@ export async function verifyChain(entries: LedgerEntry[]): Promise<VerifyResult>
   };
 }
 
+/**
+ * The real thing: every row re-hashed from genesis.
+ *
+ * O(n) with a SHA-256 per entry, which is why it is not on the homepage any
+ * more. It runs on `/ledger/verify`, on `/ledger`, and once a day in the
+ * scheduled loop — and it refreshes the materialised summary while it is here,
+ * since it has just done all the work required to build one honestly.
+ */
 export async function verifyLedger(db: Db): Promise<VerifyResult> {
-  return verifyChain(await allEntries(db));
+  const result = await verifyChain(await allEntries(db));
+  await rebuildLedgerState(db);
+  return result;
+}
+
+/** Donation-shaped entries only. The patron wall's input, without a full scan. */
+export async function donationEntries(db: Db, kinds: readonly string[]): Promise<LedgerEntry[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT * FROM ledger
+       WHERE direction = 'in' AND amount_micros > 0 AND kind IN (${kinds.map(() => "?").join(", ")})
+       ORDER BY seq ASC`,
+    )
+    .bind(...kinds)
+    .all<LedgerRow>();
+  return results.map(rowToEntry);
 }
 
 export { hashPreimage, GENESIS_PREV_HASH };
+export { readLedgerState, rebuildLedgerState } from "./state.ts";
+export type { LedgerState } from "./state.ts";

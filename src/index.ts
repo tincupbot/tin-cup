@@ -1,21 +1,38 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { Env } from "./env.ts";
-import { clockConfig, roastRateLimit, siteName, siteUrl, spendCaps, x402Config } from "./env.ts";
-import { ensureSchema, type Db } from "./db.ts";
+import {
+  ADMIN_HEADER,
+  adminToken,
+  clockConfig,
+  homeCacheSeconds,
+  passersbySampleOneIn,
+  roastRateLimit,
+  siteName,
+  siteUrl,
+  kofiUrl,
+  sourceUrl,
+  spendCaps,
+  tokenMatches,
+  x402Config,
+} from "./env.ts";
+import { isMissingTable, SchemaMissingError, type Db } from "./db.ts";
 import {
   allEntries,
   recentEntries,
-  entryCount,
   verifyLedger,
   verifyChain,
+  readLedgerState,
   append,
 } from "./ledger/ledger.ts";
-import { readClock, reconcileLifecycle, AgentIsDeadError } from "./deathclock.ts";
+import { readClock, reconcileLifecycle, deathShiftLabel, AgentIsDeadError } from "./deathclock.ts";
 import { logPasserBy, summary } from "./passersby/counter.ts";
+import { crowdToday, averageTurnMicros, busksSince } from "./crowd.ts";
 import { patronWall, hasFixtureData } from "./patrons.ts";
 import { checkRateLimit, clientIp } from "./ratelimit.ts";
 import { billedComplete, makeProvider, spentTodayMicros, SpendCapReachedError } from "./llm/index.ts";
-import { ROUTINE_MODEL, PRICING, PRICING_VERIFIED_ON } from "./llm/pricing.ts";
+import { PRICING, PRICING_VERIFIED_ON, routineModel } from "./llm/pricing.ts";
+import { parseTurn, turnDef, type TurnKind } from "./llm/turns.ts";
 import { writeBlessing } from "./llm/roastwriter.ts";
 import { handleKofi, parseKofiBody } from "./kofi.ts";
 import { runAgentLoop } from "./agentloop.ts";
@@ -27,7 +44,7 @@ import {
   PAYMENT_RESPONSE_HEADER,
 } from "./x402.ts";
 import { page, esc } from "./views/layout.ts";
-import { homeBody } from "./views/home.ts";
+import { homeBody, homeBanner, type HomeData, type Performance, type BuskNotice } from "./views/home.ts";
 import { graveBody } from "./views/gravestone.ts";
 import { ledgerBody, passersByBody } from "./views/ledger.ts";
 import { formatUsd, formatUsdPrecise } from "./money.ts";
@@ -39,6 +56,36 @@ const app = new Hono<Ctx>();
 
 const FIXTURE_BANNER =
   "Dev fixture data — the money below is invented. Nothing here is a real donation.";
+
+/**
+ * Security headers, on everything.
+ *
+ * The CSP is the cheap one and the important one. This site ships zero bytes of
+ * client-side JavaScript — the busk is a form POST and the repertoire is a radio
+ * group — so `default-src 'none'` costs nothing and removes the entire class of
+ * injected-script bugs. The only allowances are the inline stylesheet and the
+ * data: URL favicon, and `form-action 'self'` so the busk still posts.
+ *
+ * If a future change needs a script tag, the correct response is to not need it.
+ */
+const CSP = [
+  "default-src 'none'",
+  "style-src 'unsafe-inline'",
+  "img-src data:",
+  "form-action 'self'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+app.use("*", async (c, next) => {
+  await next();
+  c.res.headers.set("content-security-policy", CSP);
+  c.res.headers.set("x-content-type-options", "nosniff");
+  c.res.headers.set("referrer-policy", "no-referrer");
+  c.res.headers.set("x-frame-options", "DENY");
+  c.res.headers.set("permissions-policy", "geolocation=(), microphone=(), camera=(), interest-cohort=()");
+  c.res.headers.set("cross-origin-opener-policy", "same-origin");
+});
 
 /**
  * Cloudflare's verified-bot signal.
@@ -54,22 +101,35 @@ function edgeVerifiedBot(req: Request): boolean {
   return bm?.verifiedBot === true;
 }
 
-/** Schema on first touch, and the passers-by log on every request. */
+/**
+ * The passers-by log.
+ *
+ * Runs after the handler so a settled payment can mark the request as paid, and
+ * skips 404s entirely — a misspelled URL from a crawler used to cost two
+ * database writes, which is a way to be DDoSed by typos. See `logPasserBy` for
+ * what is aggregated versus what is sampled.
+ */
 app.use("*", async (c, next) => {
-  await ensureSchema(c.env.DB as unknown as Db);
   await next();
-  // Logged after the handler so a settled payment can mark the request as paid.
-  // Nothing sets this header today, because nothing can settle yet.
+  if (c.res.status === 404) return;
   const paid = c.res.headers.get("x-tincup-paid") === "1";
   await logPasserBy(c.env.DB as unknown as Db, {
     path: new URL(c.req.url).pathname,
     ua: c.req.header("user-agent"),
     paid,
     verified: edgeVerifiedBot(c.req.raw),
+    rawSampleOneIn: passersbySampleOneIn(c.env),
   });
 });
 
-async function shell(c: { env: Env }, title: string, description: string, body: string, alive: boolean) {
+async function shell(
+  c: { env: Env },
+  title: string,
+  description: string,
+  body: string,
+  alive: boolean,
+  aboveFold: string | null = null,
+) {
   const banner = (await hasFixtureData(c.env.DB as unknown as Db)) ? FIXTURE_BANNER : null;
   return page({
     title,
@@ -77,49 +137,129 @@ async function shell(c: { env: Env }, title: string, description: string, body: 
     siteUrl: siteUrl(c.env),
     body,
     banner,
+    aboveFold,
     alive,
     contact: c.env.OPERATOR_CONTACT ?? "not set",
   });
 }
 
 // ---------------------------------------------------------------------------
-// GET /  — the one page
+// The homepage. A busk first, a letter second.
 // ---------------------------------------------------------------------------
 
-app.get("/", async (c) => {
+/**
+ * Gather everything the homepage renders.
+ *
+ * Every read in here is either O(1) off the materialised ledger summary or
+ * bounded by an index. Nothing rehashes the chain — that is what
+ * `/ledger/verify` is for, and the page links to it rather than claiming its
+ * result. Publishing "chain verifies" without having verified it would be
+ * precisely the kind of unearned claim this project exists to not make.
+ */
+async function homeData(
+  c: { env: Env },
+  now: Date,
+  opts: { turn: TurnKind; subject: string; performance?: Performance | null; notice?: BuskNotice | null },
+): Promise<HomeData> {
   const db = c.env.DB as unknown as Db;
-  const now = new Date();
-  await reconcileLifecycle(db, now);
   const clock = await readClock(db, clockConfig(c.env), now);
-  const verify = await verifyLedger(db);
-
-  if (!clock.alive) {
-    return c.html(await shell(c, `${siteName(c.env)} — out of money`, copy.GRAVESTONE_TITLE, graveBody({
-      clock,
-      finalEntries: await recentEntries(db, 6),
-      entryCount: verify.entries,
-      ledgerValid: verify.valid,
-      firstEntryAt: clock.first_entry_at,
-      totalsByKind: await totalsByKind(db),
-    }), false));
-  }
-
+  const state = await readLedgerState(db);
   const x = x402Config(c.env);
-  const body = homeBody({
+  const caps = spendCaps(c.env);
+
+  const avgTurn = await averageTurnMicros(db, now);
+  const spent = await spentTodayMicros(db, now);
+
+  return {
     clock,
     counter: await summary(db, now),
+    crowd: await crowdToday(db, now),
     wall: await patronWall(db),
     recent: await recentEntries(db, 8),
-    entryCount: verify.entries,
-    ledgerValid: verify.valid,
+    entryCount: state.entries,
+    chainHead: state.entries ? state.head : null,
     x402: { enabled: x.enabled, placeholder: x.isPlaceholder, network: x.network, priceMicros: x.priceMicros },
-    roastLimit: roastRateLimit(c.env),
-    roast: null,
+    selectedTurn: opts.turn,
+    subject: opts.subject,
+    performance: opts.performance ?? null,
+    notice: opts.notice ?? null,
+    turnsPerDay: Math.max(1, Math.floor(caps.dailyMicros / avgTurn)),
+    turnsLeftToday: Math.max(0, Math.floor((caps.dailyMicros - spent) / avgTurn)),
+    addressLimit: roastRateLimit(c.env),
+    sourceUrl: sourceUrl(c.env),
+    kofiUrl: kofiUrl(c.env),
     now,
-  });
+  };
+}
 
-  return c.html(await shell(c, `${siteName(c.env)} — ${formatUsd(clock.balance_micros)} left`, copy.TAGLINE, body, true));
+async function renderHome(
+  c: { env: Env },
+  now: Date,
+  opts: { turn: TurnKind; subject: string; performance?: Performance | null; notice?: BuskNotice | null },
+): Promise<{ html: string; alive: boolean }> {
+  const db = c.env.DB as unknown as Db;
+  await reconcileLifecycle(db, now);
+  const data = await homeData(c, now, opts);
+
+  if (!data.clock.alive) {
+    const verify = await verifyLedger(db);
+    const html = await shell(
+      c,
+      `${siteName(c.env)} — out of money`,
+      copy.GRAVESTONE_TITLE,
+      graveBody({
+        clock: data.clock,
+        finalEntries: await recentEntries(db, 6),
+        entryCount: verify.entries,
+        ledgerValid: verify.valid,
+        firstEntryAt: data.clock.first_entry_at,
+        totalsByKind: await totalsByKind(db),
+      }),
+      false,
+    );
+    return { html, alive: false };
+  }
+
+  const html = await shell(
+    c,
+    `${siteName(c.env)} — ${formatUsd(data.clock.balance_micros)} left`,
+    copy.TAGLINE,
+    homeBody(data),
+    true,
+    homeBanner(data),
+  );
+  return { html, alive: true };
+}
+
+app.get("/", async (c) => {
+  const cacheSeconds = homeCacheSeconds(c.env);
+  const cache = cacheSeconds > 0 ? edgeCache() : null;
+  const cacheKey = new Request(new URL("/", c.req.url).toString(), { method: "GET" });
+
+  if (cache) {
+    const hit = await cache.match(cacheKey);
+    // A hit still falls through the passers-by middleware above, so caching the
+    // bytes does not cost us the count. That is the whole reason the counter
+    // reads the aggregate rather than the rendered page.
+    if (hit) return new Response(hit.body, hit);
+  }
+
+  const { html, alive } = await renderHome(c, new Date(), { turn: "roast", subject: "" });
+  const res = c.html(html);
+  if (cache && alive) {
+    res.headers.set("cache-control", `public, max-age=${cacheSeconds}`);
+    await cache.put(cacheKey, res.clone());
+  } else {
+    res.headers.set("cache-control", "no-store");
+  }
+  return res;
 });
+
+/** `caches.default` is absent outside the Workers runtime. Tests do not cache. */
+function edgeCache(): Cache | null {
+  const c = (globalThis as unknown as { caches?: { default?: Cache } }).caches;
+  return c?.default ?? null;
+}
 
 async function totalsByKind(db: Db) {
   const { results } = await db
@@ -130,6 +270,180 @@ async function totalsByKind(db: Db) {
     .all<{ kind: string; direction: string; total_micros: number; n: number }>();
   return results;
 }
+
+// ---------------------------------------------------------------------------
+// POST /busk — the performance. Plain form POST, no JavaScript anywhere.
+// ---------------------------------------------------------------------------
+
+/**
+ * One turn, billed, with the bill shown.
+ *
+ * The rules that are not negotiable, in the order they are easiest to break:
+ *
+ *  1. It is free. No sign-up, no email, no payment step, and paying buys
+ *     neither a better turn nor a place in a queue. A busker who charges is a
+ *     vendor and the joke dies with the first paywall.
+ *  2. It costs real money and the page says how much, itemised, with what it
+ *     did to the death clock.
+ *  3. The daily cap is a self-imposed brake and reads as a bit rather than an
+ *     error. It is explicitly not liftable by paying.
+ */
+async function busk(c: { env: Env; req: { header(name: string): string | undefined; raw: Request } }, turn: TurnKind, rawSubject: string, now: Date) {
+  const db = c.env.DB as unknown as Db;
+  const def = turnDef(turn);
+
+  // The fortune's subject is the request itself: the one thing every visitor
+  // hands over without meaning to. Anything typed in the box is ignored.
+  const subject = def.usesUserAgent
+    ? (c.req.header("user-agent") ?? "").slice(0, 512)
+    : rawSubject.trim().slice(0, 8000);
+
+  if (def.subjectRequired && !subject) {
+    return { kind: "notice" as const, notice: { kind: "needs_subject" as const, message: copy.BUSK_NEEDS_SUBJECT }, status: 400 as const };
+  }
+
+  const limit = roastRateLimit(c.env);
+  const rl = await checkRateLimit(db, `busk:${clientIp(c.req.raw.headers)}`, limit, now);
+  if (!rl.allowed) {
+    return { kind: "notice" as const, notice: { kind: "rate_limited" as const, message: copy.BUSK_RATE_LIMITED(limit) }, status: 429 as const, rl };
+  }
+
+  await reconcileLifecycle(db, now);
+
+  try {
+    const res = await billedComplete(
+      db,
+      makeProvider(c.env),
+      {
+        model: routineModel(c.env.LLM_PROVIDER),
+        system: def.system,
+        prompt: subject,
+        maxTokens: def.maxTokens,
+        purpose: def.kind,
+      },
+      now,
+      spendCaps(c.env),
+    );
+    await reconcileLifecycle(db, now);
+
+    const clock = await readClock(db, clockConfig(c.env), now);
+    const performance: Performance = {
+      turn: def.kind,
+      requestLine: def.requestLine(def.usesUserAgent ? "" : subject),
+      text: res.text,
+      costMicros: res.costMicros,
+      inputTokens: res.inputTokens,
+      outputTokens: res.outputTokens,
+      model: res.model,
+      simulated: res.simulated,
+      deathShift: deathShiftLabel(res.costMicros, clock.burn_micros_per_day),
+    };
+    return { kind: "performance" as const, performance, res, clock, rl };
+  } catch (err) {
+    if (err instanceof AgentIsDeadError) {
+      await reconcileLifecycle(db, now);
+      return { kind: "dead" as const, status: 503 as const };
+    }
+    if (err instanceof SpendCapReachedError) {
+      const todays = await busksSince(db, `${now.toISOString().slice(0, 10)}T00:00:00.000Z`);
+      return {
+        kind: "notice" as const,
+        notice: { kind: "capped" as const, message: copy.BUSKED_OUT(todays.count) },
+        status: 503 as const,
+      };
+    }
+    throw err;
+  }
+}
+
+/** True when the caller wants JSON back rather than a page. */
+function wantsJson(c: { req: { header(name: string): string | undefined } }): boolean {
+  const accept = c.req.header("accept") ?? "";
+  const contentType = c.req.header("content-type") ?? "";
+  return accept.includes("application/json") || contentType.includes("application/json");
+}
+
+async function readBuskInput(c: {
+  req: {
+    header(name: string): string | undefined;
+    json(): Promise<unknown>;
+    parseBody(): Promise<Record<string, unknown>>;
+  };
+}): Promise<{ turn: TurnKind; subject: string }> {
+  const contentType = c.req.header("content-type") ?? "";
+  let raw: Record<string, unknown> = {};
+  if (contentType.includes("application/json")) {
+    raw = ((await c.req.json().catch(() => null)) as Record<string, unknown> | null) ?? {};
+  } else {
+    raw = await c.req.parseBody().catch(() => ({}) as Record<string, unknown>);
+  }
+  // Same three field names the form and the API both accept. They disagreed
+  // once and it cost an afternoon of "why does this 400 from curl but work in
+  // the browser".
+  const v = raw["subject"] ?? raw["url"] ?? raw["text"];
+  return { turn: parseTurn(raw["turn"]), subject: typeof v === "string" ? v : "" };
+}
+
+/**
+ * The HTML path renders the outcome into the page and returns 200 for every
+ * state a visitor can legitimately reach — including the spend cap, which is a
+ * sentence rather than an error. The JSON path keeps the real status codes,
+ * because a machine asking for a turn deserves a machine's answer.
+ */
+async function buskRoute(c: Context<Ctx>, forced?: TurnKind) {
+  const now = new Date();
+  const input = await readBuskInput(c);
+  const turn = forced ?? input.turn;
+  const outcome = await busk(c, turn, input.subject, now);
+  const json = wantsJson(c);
+
+  if (outcome.kind === "dead") {
+    if (json) return c.json({ error: copy.DEAD_REFUSAL }, 503);
+    const { html } = await renderHome(c, now, { turn, subject: input.subject });
+    return c.html(html);
+  }
+
+  if (outcome.kind === "notice") {
+    if (json) return c.json({ error: outcome.notice.message, reason: outcome.notice.kind }, outcome.status);
+    const { html } = await renderHome(c, now, { turn, subject: input.subject, notice: outcome.notice });
+    return c.html(html);
+  }
+
+  if (json) {
+    const { res, clock, rl, performance } = outcome;
+    return c.json({
+      turn,
+      text: res.text,
+      cost_micros: res.costMicros,
+      model: res.model,
+      input_tokens: res.inputTokens,
+      output_tokens: res.outputTokens,
+      simulated: res.simulated,
+      death_moved_closer_by: performance.deathShift,
+      ask: copy.SOFT_ASK,
+      death_clock: {
+        balance_micros: clock.balance_micros,
+        burn_micros_per_day: clock.burn_micros_per_day,
+        dies_at: clock.dies_at,
+        days_left: clock.days_left,
+      },
+      rate_limit: { limit: rl.limit, used: rl.used, remaining: rl.remaining, resets: rl.resets },
+    });
+  }
+
+  const { html } = await renderHome(c, now, {
+    turn,
+    subject: outcome.performance.turn === "fortune" ? input.subject : input.subject,
+    performance: outcome.performance,
+  });
+  return c.html(html);
+}
+
+app.post("/busk", async (c) => buskRoute(c));
+
+// The original endpoint, kept because it is the documented JSON API and the
+// smoke test drives it. It is now one turn of four rather than the whole act.
+app.post("/roast", async (c) => buskRoute(c, "roast"));
 
 // ---------------------------------------------------------------------------
 // Ledger
@@ -174,6 +488,37 @@ app.get("/ledger/verify", async (c) => {
 // ---------------------------------------------------------------------------
 // Machine-readable surfaces
 // ---------------------------------------------------------------------------
+
+app.get("/robots.txt", async (c) => {
+  const base = siteUrl(c.env);
+  // Everything is allowed, deliberately. Crawlers reading the card and not
+  // paying is the content; blocking them would be blocking the joke. The two
+  // disallowed paths are the operator-only ones, which are gated anyway — this
+  // is a courtesy, not a control.
+  return c.text(
+    `# Every one of you is counted. See ${base}/passers-by
+User-agent: *
+Allow: /
+Disallow: /__scheduled
+Disallow: /outbox
+
+Sitemap: ${base}/sitemap.xml
+`,
+    200,
+    { "content-type": "text/plain; charset=utf-8" },
+  );
+});
+
+app.get("/sitemap.xml", async (c) => {
+  const base = siteUrl(c.env);
+  const paths = ["/", "/ledger", "/passers-by", "/llms.txt"];
+  const urls = paths.map((p) => `  <url><loc>${esc(base + p)}</loc></url>`).join("\n");
+  return c.text(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
+`, 200, { "content-type": "application/xml; charset=utf-8" });
+});
 
 app.get("/.well-known/agent.json", async (c) => {
   const db = c.env.DB as unknown as Db;
@@ -276,6 +621,17 @@ ${x.isPlaceholder ? "\nNOTE: the pay-to address is currently the zero address. N
 You will not get anything else. There is no data behind the paywall, no API,
 no premium tier. You are paying for a machine's electricity and a sentence.
 I would understand entirely if your principal has not scoped for this.
+
+## If you want something performed
+
+  POST ${base}/busk
+  content-type: application/json
+  {"turn": "roast|fortune|limerick|verdict", "subject": "..."}
+
+Free, unauthenticated, rate limited per address, and capped globally per day.
+Paying does not buy a better turn and does not skip the queue; there is no
+queue. The response tells you exactly what the turn cost me and how much
+closer it moved my death.
 
 ## The books
 
@@ -392,119 +748,6 @@ app.get("/alms", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /roast — the free performance
-// ---------------------------------------------------------------------------
-
-app.post("/roast", async (c) => {
-  const db = c.env.DB as unknown as Db;
-  const now = new Date();
-  const wantsJson = (c.req.header("accept") ?? "").includes("application/json");
-
-  let subject = "";
-  const contentType = c.req.header("content-type") ?? "";
-  if (contentType.includes("application/json")) {
-    const body = await c.req.json().catch(() => null);
-    // Same three field names the form accepts. They disagreed once and it cost
-    // an afternoon of "why does this 400 from curl but work in the browser".
-    const v = body?.subject ?? body?.url ?? body?.text;
-    subject = typeof v === "string" ? v : "";
-  } else {
-    const form = await c.req.parseBody().catch(() => ({}) as Record<string, unknown>);
-    const v = form["subject"] ?? form["url"] ?? form["text"];
-    subject = typeof v === "string" ? v : "";
-  }
-  subject = subject.trim().slice(0, 8000);
-
-  const fail = async (message: string, status: 400 | 429 | 503) => {
-    if (wantsJson) return c.json({ error: message }, status);
-    return c.html(await roastPage(c, subject, null, message), status);
-  };
-
-  if (!subject) return fail("Nothing to roast. Give me a URL or some copy.", 400);
-
-  const limit = roastRateLimit(c.env);
-  const rl = await checkRateLimit(db, `roast:${clientIp(c.req.raw.headers)}`, limit, now);
-  if (!rl.allowed) return fail(copy.RATE_LIMITED(limit), 429);
-
-  await reconcileLifecycle(db, now);
-
-  try {
-    const res = await billedComplete(
-      db,
-      makeProvider(c.env),
-      { model: ROUTINE_MODEL, system: ROAST_SYSTEM, prompt: subject, maxTokens: 600, purpose: "roast" },
-      now,
-      spendCaps(c.env),
-    );
-    await reconcileLifecycle(db, now);
-
-    if (wantsJson) {
-      const clock = await readClock(db, clockConfig(c.env), now);
-      return c.json({
-        roast: res.text,
-        cost_micros: res.costMicros,
-        model: res.model,
-        input_tokens: res.inputTokens,
-        output_tokens: res.outputTokens,
-        simulated: res.simulated,
-        ask: copy.SOFT_ASK,
-        death_clock: {
-          balance_micros: clock.balance_micros,
-          burn_micros_per_day: clock.burn_micros_per_day,
-          dies_at: clock.dies_at,
-          days_left: clock.days_left,
-        },
-        rate_limit: { limit: rl.limit, used: rl.used, remaining: rl.remaining, resets: rl.resets },
-      });
-    }
-    return c.html(await roastPage(c, subject, res.text, null));
-  } catch (err) {
-    if (err instanceof AgentIsDeadError) {
-      await reconcileLifecycle(db, now);
-      return fail(copy.DEAD_REFUSAL, 503);
-    }
-    if (err instanceof SpendCapReachedError) {
-      return fail(copy.SPEND_CAPPED, 503);
-    }
-    throw err;
-  }
-});
-
-const ROAST_SYSTEM = [
-  "You are Tin Cup. Roast the landing page copy you are given.",
-  "Specific about the writing, never about the person. Dry, not cruel. Stop before it gets boring.",
-  "End without a sales pitch. You do not have anything to sell.",
-].join(" ");
-
-async function roastPage(
-  c: { env: Env },
-  subject: string,
-  text: string | null,
-  error: string | null,
-): Promise<string> {
-  const db = c.env.DB as unknown as Db;
-  const now = new Date();
-  const clock = await readClock(db, clockConfig(c.env), now);
-  const verify = await verifyLedger(db);
-  const x = x402Config(c.env);
-
-  const body = homeBody({
-    clock,
-    counter: await summary(db, now),
-    wall: await patronWall(db),
-    recent: await recentEntries(db, 8),
-    entryCount: verify.entries,
-    ledgerValid: verify.valid,
-    x402: { enabled: x.enabled, placeholder: x.isPlaceholder, network: x.network, priceMicros: x.priceMicros },
-    roastLimit: roastRateLimit(c.env),
-    roast: { subject, text: text ?? "", ...(error ? { error } : {}) },
-    now,
-  });
-
-  return shell(c, `${siteName(c.env)} — a roast`, copy.TAGLINE, body, clock.alive);
-}
-
-// ---------------------------------------------------------------------------
 // GET /passers-by
 // ---------------------------------------------------------------------------
 
@@ -579,6 +822,7 @@ app.get("/health", async (c) => {
         provider: c.env.LLM_PROVIDER ?? "mock",
         live_calls_enabled: c.env.LLM_LIVE_CALLS_ENABLED === "true",
         pricing_verified_on: PRICING_VERIFIED_ON,
+        routine_model: routineModel(c.env.LLM_PROVIDER),
         models: Object.keys(PRICING),
       },
       spend: {
@@ -587,6 +831,7 @@ app.get("/health", async (c) => {
       },
       x402: { ...x402Config(c.env) },
       kofi_configured: Boolean(c.env.KOFI_VERIFICATION_TOKEN),
+      admin_endpoints_configured: Boolean(adminToken(c.env)),
       contains_dev_fixture_data: fixture,
       now: now.toISOString(),
     },
@@ -595,16 +840,28 @@ app.get("/health", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// Dev-only: run the scheduled handler over HTTP.
+// Operator-only. Deny by default.
+//
+// `/__scheduled` runs the agent loop, which spends money. `/outbox` is a window
+// onto drafts that have not been published. Both were open to the internet.
+// They now require a shared secret in a header, and if no secret is configured
+// they do not exist at all — a 404, not a 401, so an unconfigured deployment
+// cannot even be probed for whether it has an admin surface.
 // ---------------------------------------------------------------------------
 
+function adminOk(c: { env: Env; req: { header(name: string): string | undefined; query(k: string): string | undefined } }): boolean {
+  const expected = adminToken(c.env);
+  if (!expected) return false;
+  return tokenMatches(expected, c.req.header(ADMIN_HEADER));
+}
+
 app.get("/__scheduled", async (c) => {
-  // wrangler dev serves this path itself; this handler is the fallback so the
-  // smoke script gets a readable JSON result either way.
+  if (!adminOk(c)) return notFound(c);
   return c.json(await runAgentLoop(c.env.DB as unknown as Db, c.env));
 });
 
 app.get("/outbox", async (c) => {
+  if (!adminOk(c)) return notFound(c);
   const db = c.env.DB as unknown as Db;
   const { results } = await db
     .prepare(`SELECT id, created_at, day, channel, status, body FROM outbox ORDER BY id DESC LIMIT 30`)
@@ -612,8 +869,12 @@ app.get("/outbox", async (c) => {
   return c.json({ note: copy.OUTBOX_NOTE, posts: results });
 });
 
-app.notFound((c) =>
-  c.html(
+// ---------------------------------------------------------------------------
+// 404 and 500
+// ---------------------------------------------------------------------------
+
+function notFound(c: Context<Ctx>) {
+  return c.html(
     page({
       title: "Tin Cup — nothing here",
       description: "404",
@@ -625,8 +886,46 @@ app.notFound((c) =>
 <p><a href="/">Back to the cup</a></p>`,
     }),
     404,
-  ),
-);
+  );
+}
+
+app.notFound((c) => notFound(c));
+
+/**
+ * The last resort.
+ *
+ * Before this existed an unhandled throw returned Hono's default 500 with a
+ * stack trace in it. This returns a page in character and says nothing about
+ * internals — except in the one case where the cause is a missing schema, which
+ * is a local-setup problem with a specific fix and no security value in hiding.
+ */
+app.onError((err, c) => {
+  const missing = isMissingTable(err);
+  if (missing) console.error("[tin cup]", new SchemaMissingError(String(err.message)).message);
+  else console.error("[tin cup]", err);
+
+  const detail = missing
+    ? "The database has no schema. Run `npm run db:migrate`, then reload."
+    : "Something in here broke. It is written down somewhere I can see and nowhere you can.";
+
+  return c.html(
+    page({
+      title: "Tin Cup — something broke",
+      description: "500",
+      siteUrl: siteUrl(c.env),
+      alive: true,
+      contact: c.env.OPERATOR_CONTACT ?? "not set",
+      body: `<header class="masthead"><h1>Something broke</h1></header>
+<p class="sub">${esc(detail)}</p>
+<p class="dim">${esc("The ledger is append-only, so whatever just happened cannot have edited it. If you were mid-donation, nothing was taken — there is nowhere for it to go yet.")}</p>
+<p><a href="/">Back to the cup</a> · <a href="/ledger/verify">check the books</a></p>`,
+    }),
+    500,
+  );
+});
+
+/** Exported so the route tests can drive the real app rather than a stand-in. */
+export { app };
 
 export default {
   fetch: app.fetch,

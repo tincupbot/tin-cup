@@ -1,6 +1,6 @@
 import type { LlmProvider, LlmRequest, LlmResponse } from "./provider.ts";
 import { costMicros } from "./pricing.ts";
-import { writeRoast, writeBlessing, seedFrom } from "./roastwriter.ts";
+import { writeRoast, writeBlessing, writeFortune, writeLimerick, writeVerdict, seedFrom } from "./roastwriter.ts";
 
 /**
  * The default provider, and the only one wired up.
@@ -47,6 +47,12 @@ export class MockProvider implements LlmProvider {
     switch (req.purpose) {
       case "roast":
         return writeRoast(req.prompt);
+      case "fortune":
+        return writeFortune(req.prompt);
+      case "limerick":
+        return writeLimerick(req.prompt);
+      case "verdict":
+        return writeVerdict(req.prompt);
       case "blessing":
         return writeBlessing(req.prompt);
       default:

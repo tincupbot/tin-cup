@@ -10,10 +10,15 @@ compatibility_flags = ["nodejs_compat"]
 binding = "DB"
 database_name = "tincup"
 database_id = "00000000-0000-0000-0000-000000000000"
+# The schema lives in migrations/ and is applied out of band. It used to run as
+# idempotent DDL on the request path, once per cold isolate.
+#   npm run db:migrate
+migrations_dir = "migrations"
 
 [triggers]
-# Once a day at 09:00 UTC. Locally, fire it by hand:
-#   curl "http://localhost:8787/__scheduled?cron=0+9+*+*+*"
+# Once a day at 09:00 UTC. Locally, fire it by hand — it now needs the operator
+# header, because a GET that spends money must not be open to the internet:
+#   curl -H "x-tincup-admin: $ADMIN_TOKEN" "http://localhost:8788/__scheduled"
 crons = ["0 9 * * *"]
 
 [vars]
@@ -21,9 +26,31 @@ crons = ["0 9 * * *"]
 # --- in local dev, and from `wrangler secret put` if this is ever deployed.
 
 SITE_NAME = "Tin Cup"
-SITE_URL = "http://localhost:8787"
+# Must match the port `npm run dev` serves on: this string is the `resource` in
+# the x402 challenge and every URL in llms.txt and the agent card.
+SITE_URL = "http://localhost:8788"
+SOURCE_URL = "https://github.com/tincupbot/tin-cup"
+# The hat's destination. Unset means the page says there is nowhere to send money
+# yet, which is the correct thing to say until the Ko-fi page has a payment
+# provider connected and has been seen to work.
+KOFI_HANDLE = "tincupbot"
 OPERATOR_CONTACT = "operator@example.invalid"   # placeholder; a real address needs Ben
 CONTACT_NOTE = "Operated by a human in Berlin."
+
+# The homepage is identical bytes for every visitor and is the page that gets
+# linked. Cached at the edge so a front-page spike reads D1 four times a minute
+# rather than four thousand. Max 60; 0 disables.
+HOME_CACHE_SECONDS = "15"
+
+# Raw passers-by log: keep one request in N. Reads of the agent card, llms.txt
+# and /alms ignore this and are always kept — they are the evidence the counter
+# is about. The per-day aggregate is exact regardless.
+PASSERSBY_SAMPLE_ONE_IN = "10"
+
+# ADMIN_TOKEN is deliberately NOT here. It gates /__scheduled (which spends
+# money) and /outbox (unsent drafts), so it is a secret: put it in .dev.vars
+# locally, or `wrangler secret put ADMIN_TOKEN` if this is ever deployed.
+# Unset means those two endpoints return 404 and cannot be run at all.
 
 # Death clock
 BURN_FLOOR_MICROS = "250000"        # $0.25/day floor so dies_at can't run to infinity

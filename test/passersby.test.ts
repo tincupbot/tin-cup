@@ -119,7 +119,13 @@ describe("the counter", () => {
 
   it("does not log a browser reading an ordinary page", async () => {
     const db = await freshDb();
-    expect(await logPasserBy(db, { path: "/", ua: CHROME, now: NOW })).toBe(false);
+    // Not merely "not counted" — not written at all. A browser reading the
+    // front page must cost zero database writes.
+    expect(await logPasserBy(db, { path: "/", ua: CHROME, now: NOW })).toEqual({
+      logged: false,
+      aggregated: false,
+      raw: false,
+    });
     expect((await statsForDay(db, dayKey(NOW))).machine_requests).toBe(0);
   });
 

@@ -1,0 +1,42 @@
+name: CI
+
+# Typecheck, lint, guard and test. No deploy step exists in this workflow and
+# none should be added: deploying needs a Cloudflare account and an approval
+# that a CI runner does not have.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # node:sqlite and --experimental-strip-types. The test suite runs
+          # against Node's built-in SQLite rather than a Workers runtime, which
+          # is why there is no miniflare in this job.
+          node-version: "24"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npx eslint .
+
+      - name: Project guard
+        run: npm run guard
+
+      - name: Test
+        run: npm test

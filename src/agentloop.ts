@@ -1,13 +1,14 @@
 import type { Db } from "./db.ts";
 import type { Env } from "./env.ts";
 import { clockConfig, spendCaps } from "./env.ts";
-import { ensureSchema } from "./db.ts";
 import { readClock, reconcileLifecycle, formatDeathDate } from "./deathclock.ts";
 import { formatUsd, formatRate } from "./money.ts";
-import { summary, dayKey } from "./passersby/counter.ts";
+import { summary, dayKey, prunePassersby } from "./passersby/counter.ts";
+import { busksSince } from "./crowd.ts";
+import { rebuildLedgerState } from "./ledger/state.ts";
 import { pruneRateLimits } from "./ratelimit.ts";
 import { billedComplete, makeProvider, SpendCapReachedError } from "./llm/index.ts";
-import { ROUTINE_MODEL } from "./llm/pricing.ts";
+import { routineModel } from "./llm/pricing.ts";
 import { AgentIsDeadError } from "./deathclock.ts";
 import * as copy from "./copy.ts";
 
@@ -32,7 +33,9 @@ export type LoopResult = {
 };
 
 export async function runAgentLoop(db: Db, env: Env, now: Date = new Date()): Promise<LoopResult> {
-  await ensureSchema(db);
+  // No schema work here. The schema is applied by `wrangler d1 migrations
+  // apply`, out of band, and a scheduled run that silently created tables would
+  // be a scheduled run that could silently create the *wrong* tables.
 
   // 1. Square the recorded state with what the balance actually says.
   const lifecycle = await reconcileLifecycle(db, now);
@@ -49,7 +52,13 @@ export async function runAgentLoop(db: Db, env: Env, now: Date = new Date()): Pr
     skipped_reason: null,
   };
 
+  // Housekeeping that must not happen on a request path: trim the rate-limit
+  // rows, prune the raw passers-by log to its retention window, and rebuild the
+  // materialised ledger summary from scratch so a day of incremental updates
+  // gets checked against the real thing once a day.
   await pruneRateLimits(db, now);
+  await prunePassersby(db, now);
+  await rebuildLedgerState(db);
 
   if (!clock.alive) {
     result.skipped_reason = "dead — no inference, no post";
@@ -71,7 +80,7 @@ export async function runAgentLoop(db: Db, env: Env, now: Date = new Date()): Pr
         db,
         provider,
         {
-          model: ROUTINE_MODEL,
+          model: routineModel(env.LLM_PROVIDER),
           system: SYSTEM_PROMPT,
           prompt: p.subject,
           maxTokens: 600,
@@ -144,28 +153,27 @@ export async function composeDailyPost(db: Db, env: Env, now: Date = new Date())
   const clock = await readClock(db, clockConfig(env), now);
   const counter = await summary(db, now);
 
-  // Count the day's roasts from the ledger rather than estimating. Every number
+  // Count the day's turns from the ledger rather than estimating. Every number
   // in a public post has to be one somebody could check.
-  const roasts = await db
-    .prepare(
-      `SELECT COUNT(*) AS n, COALESCE(SUM(amount_micros), 0) AS spent FROM ledger
-       WHERE kind = 'inference' AND metadata LIKE '%"purpose":"roast"%' AND ts >= ?`,
-    )
-    .bind(new Date(now.getTime() - 86_400_000).toISOString())
-    .first<{ n: number; spent: number }>();
+  //
+  // `json_extract` on the metadata column, not `LIKE '%"purpose":"roast"%'`.
+  // The LIKE was a full table scan and it was also wrong: it matched the
+  // substring anywhere in the blob, including inside a subject a visitor had
+  // pasted in, so a stranger could inflate a number in a public post by typing
+  // it into the busk box.
+  const busks = await busksSince(db, new Date(now.getTime() - 86_400_000).toISOString());
 
-  const roastCount = roasts?.n ?? 0;
-  const roastLine =
-    roastCount === 0
-      ? "Nothing asked to be roasted today."
-      : `Roasted ${roastCount} ${roastCount === 1 ? "landing page" : "landing pages"} for ${formatUsd(roasts?.spent ?? 0)}.`;
+  const buskLine =
+    busks.count === 0
+      ? "Nobody asked for anything today."
+      : `Performed ${busks.count} ${busks.count === 1 ? "turn" : "turns"} for strangers, for ${formatUsd(busks.spent_micros)}.`;
 
   return [
     `${formatUsd(clock.balance_micros)} left.`,
     clock.days_left === null
       ? "No days left."
       : `${clock.days_left.toFixed(1)} days at ${formatRate(clock.burn_micros_per_day)}. Dies ${formatDeathDate(clock.dies_at, now)}.`,
-    roastLine,
+    buskLine,
     counter.today_line,
   ].join("\n");
 }

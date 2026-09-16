@@ -1,5 +1,6 @@
 import type { Db } from "./db.ts";
-import { allEntries, type LedgerEntry } from "./ledger/ledger.ts";
+import { donationEntries, type LedgerEntry } from "./ledger/ledger.ts";
+import { readLedgerState } from "./ledger/state.ts";
 
 export type Patron = {
   name: string;
@@ -11,7 +12,8 @@ export type Patron = {
   fixture: boolean;
 };
 
-const DONATION_KINDS = new Set(["donation", "x402_alms", "commission", "dev_fixture"]);
+export const DONATION_KIND_LIST = ["donation", "x402_alms", "commission", "dev_fixture"] as const;
+const DONATION_KINDS = new Set<string>(DONATION_KIND_LIST);
 
 /**
  * The wall, derived from the ledger rather than stored separately.
@@ -24,7 +26,10 @@ const DONATION_KINDS = new Set(["donation", "x402_alms", "commission", "dev_fixt
  * than listed as "Anonymous" eleven times.
  */
 export async function patronWall(db: Db, limit = 25): Promise<{ named: Patron[]; anonymous: { count: number; total_micros: number } }> {
-  return wallFrom(await allEntries(db), limit);
+  // Only the entries that can possibly appear on the wall. This used to read
+  // the entire ledger on every homepage render to find the handful of rows that
+  // were gifts; `ledger_kind_ts` makes it a range scan over the donations.
+  return wallFrom(await donationEntries(db, DONATION_KIND_LIST), limit);
 }
 
 export function wallFrom(entries: LedgerEntry[], limit = 25) {
@@ -69,10 +74,14 @@ export function wallFrom(entries: LedgerEntry[], limit = 25) {
   return { named, anonymous: { count: anonCount, total_micros: anonTotal } };
 }
 
-/** Whether the ledger contains any seeded demo entries. Drives the fixture banner. */
+/**
+ * Whether the ledger contains any seeded demo entries. Drives the fixture banner.
+ *
+ * Read off the materialised ledger summary, which is O(1). The old version was
+ * a `metadata LIKE '%"fixture":true%'` scan of the whole table, run on every
+ * page of the site — and worse, it scanned hardest in the case that matters,
+ * production, where the answer is "no" and every row has to be checked to say so.
+ */
 export async function hasFixtureData(db: Db): Promise<boolean> {
-  const row = await db
-    .prepare(`SELECT 1 AS hit FROM ledger WHERE kind = 'dev_fixture' OR metadata LIKE '%"fixture":true%' LIMIT 1`)
-    .first<{ hit: number }>();
-  return Boolean(row);
+  return (await readLedgerState(db)).has_fixture;
 }
