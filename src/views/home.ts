@@ -165,7 +165,10 @@ function hatBlock(p: Performance, kofi: string | null): string {
 function performanceBlock(p: Performance, kofi: string | null): string {
   return `
 <div class="perf">
-  <p class="req">${esc(p.requestLine)}</p>
+  <div class="perf-head">
+    <p class="perf-kicker">${esc(copy.PERF_KICKER)}</p>
+    <p class="req">${esc(p.requestLine)}</p>
+  </div>
   ${paragraphs(p.text, "turn-out")}
   ${hatBlock(p, kofi)}
 </div>`;
@@ -183,6 +186,11 @@ function noticeBlock(n: BuskNotice): string {
 function pitchBlock(data: HomeData): string {
   const def = turnDef(data.selectedTurn);
   const subject = data.subject || "";
+  // Whether this render has anything to show for a submission. The form posts to
+  // `#turn` rather than `#pitch` so that the browser lands on the answer instead
+  // of on the box the visitor has just finished typing into; this is the element
+  // that anchor resolves to, and it exists only when there is something to land on.
+  const answered = Boolean(data.notice || data.performance);
 
   return `
 <section class="pitch" id="pitch">
@@ -191,7 +199,7 @@ function pitchBlock(data: HomeData): string {
     <p>${esc(copy.PITCH_INTRO)}</p>
   </div>
   <div class="pitch-body">
-    <form method="post" action="/busk#pitch">
+    <form method="post" action="/busk#turn">
       ${repertoire(data.selectedTurn)}
       <div class="ask-line">
         <input type="text" name="subject" maxlength="8000" value="${esc(subject)}"
@@ -202,8 +210,10 @@ function pitchBlock(data: HomeData): string {
     <p class="free">${esc(copy.BUSK_FREE_NOTE(data.turnsPerDay))}
        ${esc(`About ${data.turnsLeftToday} left in today's. ${data.addressLimit} per address.`)}</p>
     ${data.providerDown && !data.notice ? `<div class="notice warn">${esc(copy.PROVIDER_DOWN_BANNER)}</div>` : ""}
-    ${data.notice ? noticeBlock(data.notice) : ""}
-    ${data.performance ? performanceBlock(data.performance, data.kofiUrl) : ""}
+    ${answered ? `<div class="result" id="turn">
+      ${data.notice ? noticeBlock(data.notice) : ""}
+      ${data.performance ? performanceBlock(data.performance, data.kofiUrl) : ""}
+    </div>` : ""}
   </div>
 </section>`;
 }

@@ -143,11 +143,33 @@ blockquote { margin: 0; padding-left: 1.1rem; border-left: 2px solid var(--rule-
 
 /* ---- a performance, and the hat that follows it ------------------------ */
 
-.perf { margin: 1.4rem 0 0; border-top: 1px solid var(--rule-2); padding: 1.3rem 0 0; }
-.perf .req { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.13em; text-transform: uppercase;
-  color: var(--ink-3); margin: 0 0 0.7rem; }
-.turn-out { margin: 0 0 1.1rem; font-size: 1.06rem; line-height: 1.62;
-  border-left: 2px solid var(--rule-2); padding-left: 1.1rem; }
+/* The answer to a submission, whether that is a turn or a refusal.
+   A busk is a form POST: the page the visitor gets back is the page they
+   submitted from, so nothing about the layout tells them anything happened.
+   This wrapper is the anchor the form targets, and everything in it is styled
+   to look like it arrived rather than like it was always there. */
+.result { scroll-margin-top: 1.2rem; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .result { animation: arrive 420ms cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+}
+@keyframes arrive {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Its own paper, its own border, and a rule in the one saturated colour the
+   document owns — so it reads as a delivered object and not as the tail of the
+   form above it. */
+.perf { margin: 1.5rem 0 0; border: 1px solid var(--rule-2); border-top: 3px solid var(--red);
+  background: var(--paper); padding: 1.35rem 1.5rem 1.5rem; }
+.perf-head { margin: 0 0 1.15rem; padding: 0 0 0.9rem; border-bottom: 1px solid var(--rule); }
+.perf-kicker { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--red); margin: 0 0 0.4rem; }
+.perf .req { font-family: var(--serif); font-size: 1.3rem; line-height: 1.28; font-weight: 600;
+  letter-spacing: 0; text-transform: none; color: var(--ink); margin: 0; }
+/* The turn itself is the product. It gets the largest body type on the page. */
+.turn-out { margin: 0 0 1.15rem; font-size: 1.16rem; line-height: 1.66; color: var(--ink); }
 .turn-out:last-child { margin-bottom: 0; }
 
 /* The hat only ever renders underneath a delivered turn. That is the whole
@@ -336,5 +358,8 @@ footer p { margin: 0 0 0.5rem; line-height: 1.6; }
   .reps { grid-template-columns: 1fr; }
   .bar { grid-template-columns: 7rem 1fr auto; font-size: 0.72rem; }
   .pitch-head, .pitch-body { padding-left: 1.1rem; padding-right: 1.1rem; }
+  .perf { padding: 1.15rem 1.1rem 1.25rem; }
+  .perf .req { font-size: 1.18rem; }
+  .turn-out { font-size: 1.1rem; }
 }
 `;

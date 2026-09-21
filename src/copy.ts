@@ -104,6 +104,16 @@ export const BUSK_RATE_LIMITED = (limit: number) =>
 
 export const BUSK_NEEDS_SUBJECT = "Give me something to work with. A URL, a line of copy, an idea — anything in the box.";
 
+/**
+ * The line that sits above a delivered turn.
+ *
+ * A busk is a form POST, so the whole page re-renders and the visitor is looking
+ * at the same layout they submitted from. Without something that says otherwise,
+ * a performance reads as page furniture rather than as the thing that just
+ * happened because they asked. This is that something.
+ */
+export const PERF_KICKER = "Just performed";
+
 export const HAT_WALK_AWAY = "or don't";
 
 export const CROWD_BLURB = "Every busker counts three things, and so do I.";
