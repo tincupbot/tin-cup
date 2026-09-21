@@ -6,6 +6,7 @@ import {
   adminToken,
   clockConfig,
   homeCacheSeconds,
+  kofiDryRun,
   passersbySampleOneIn,
   roastRateLimit,
   siteName,
@@ -869,10 +870,26 @@ app.post("/webhook/kofi", async (c) => {
   const db = c.env.DB as unknown as Db;
   const raw = await c.req.text();
   const payload = parseKofiBody(new URLSearchParams(raw));
-  const result = await handleKofi(db, payload, c.env.KOFI_VERIFICATION_TOKEN);
+  const dryRun = kofiDryRun(c.env);
+  const result = await handleKofi(db, payload, c.env.KOFI_VERIFICATION_TOKEN, new Date(), { dryRun });
 
   if (result.status === "rejected") {
     return c.json({ ok: false, reason: result.reason }, result.httpStatus as 400);
+  }
+  if (result.status === "observed") {
+    // Logged so a delivery can be watched live through `wrangler tail` while
+    // someone clicks Ko-fi's test button. Amount, currency and event type only
+    // — never the token, never the supporter's email or message.
+    console.log(
+      `[kofi] observed, not booked: ${result.reason} · ${formatUsd(result.amountMicros)} ${result.currency} · type=${result.kofiType ?? "none"}`,
+    );
+    return c.json({
+      ok: true,
+      recorded: false,
+      reason: result.reason,
+      amount: formatUsd(result.amountMicros),
+      currency: result.currency,
+    });
   }
   if (result.duplicate) {
     return c.json({ ok: true, duplicate: true, ledger_entry: result.ledgerId });
@@ -933,6 +950,8 @@ app.get("/health", async (c) => {
       },
       x402: { ...x402Config(c.env) },
       kofi_configured: Boolean(c.env.KOFI_VERIFICATION_TOKEN),
+      /** On means verified donations are acknowledged and not booked. Loud on purpose. */
+      kofi_dry_run: kofiDryRun(c.env),
       admin_endpoints_configured: Boolean(adminToken(c.env)),
       contains_dev_fixture_data: fixture,
       now: now.toISOString(),

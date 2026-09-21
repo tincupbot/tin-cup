@@ -186,6 +186,12 @@ const viewTs = srcTs.filter((f) => f.includes("/views/"));
     if (!payToIsZero) {
       fail(TOML, "no-wallet", "production sets a non-zero X402_PAY_TO — a real wallet is a Ben decision");
     }
+    // The dry run acknowledges verified donations and writes nothing. It is a
+    // deploy-time flag for proving the webhook wiring, and committing it would
+    // mean real money arriving, returning 200, and vanishing.
+    if (/^\s*KOFI_DRY_RUN\s*=\s*"true"/m.test(prod)) {
+      fail(TOML, "prod-config", "KOFI_DRY_RUN is committed as true — donations would be acknowledged and dropped");
+    }
     // A contact that bounces is worse than none: it looks like a way to reach
     // a human and is not.
     if (/example\.invalid/.test(prod)) {

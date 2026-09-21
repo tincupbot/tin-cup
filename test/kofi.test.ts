@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { freshDb } from "./helpers.ts";
-import { handleKofi, parseKofiBody, type KofiPayload } from "../src/kofi.ts";
+import { handleKofi, parseKofiBody, KOFI_TEST_TRANSACTION_ID, type KofiPayload } from "../src/kofi.ts";
 import { readClock, reconcileLifecycle } from "../src/deathclock.ts";
 import { allEntries, append } from "../src/ledger/ledger.ts";
 import { wallFrom } from "../src/patrons.ts";
@@ -139,5 +139,80 @@ describe("handleKofi", () => {
     const clock = await readClock(db);
     expect(clock.alive).toBe(true);
     expect(clock.resurrections).toBe(1);
+  });
+});
+
+/**
+ * Money that nobody was charged.
+ *
+ * Both paths below produce a verified, well-formed, entirely genuine Ko-fi
+ * delivery that must never become a ledger entry — and the ledger has no delete
+ * path, so "must never" is literal.
+ */
+describe("deliveries that are verified but must not be booked", () => {
+  it("acknowledges Ko-fi's own test payment without writing anything", async () => {
+    const db = await freshDb();
+
+    const res = await handleKofi(db, payload({ kofi_transaction_id: KOFI_TEST_TRANSACTION_ID }), TOKEN);
+
+    expect(res).toMatchObject({ status: "observed", reason: "ko-fi test payment", currency: "USD" });
+    expect(await allEntries(db)).toHaveLength(0);
+  });
+
+  it("catches the test payment by its url when the transaction id is not the tell", async () => {
+    const db = await freshDb();
+
+    const res = await handleKofi(
+      db,
+      payload({
+        kofi_transaction_id: "something-else",
+        url: `https://ko-fi.com/Home/CoffeeShop?txid=${KOFI_TEST_TRANSACTION_ID}`,
+      }),
+      TOKEN,
+    );
+
+    expect(res).toMatchObject({ status: "observed", reason: "ko-fi test payment" });
+    expect(await allEntries(db)).toHaveLength(0);
+  });
+
+  it("reports what a dry run would have credited, and credits nothing", async () => {
+    const db = await freshDb();
+
+    const res = await handleKofi(db, payload({ amount: "5.00" }), TOKEN, new Date(), { dryRun: true });
+
+    expect(res).toMatchObject({
+      status: "observed",
+      reason: "dry run",
+      amountMicros: 5_000_000,
+      currency: "USD",
+      kofiType: "Donation",
+    });
+    expect(await allEntries(db)).toHaveLength(0);
+  });
+
+  it("does not burn the message id, so the real delivery still lands", async () => {
+    // A dry run that claimed the id would make the donation that follows look
+    // like a duplicate and silently vanish.
+    const db = await freshDb();
+
+    await handleKofi(db, payload(), TOKEN, new Date(), { dryRun: true });
+    const real = await handleKofi(db, payload(), TOKEN);
+
+    expect(real).toMatchObject({ status: "ok", duplicate: false });
+    expect(await allEntries(db)).toHaveLength(1);
+  });
+
+  it("still refuses a bad token and a bad currency while dry running", async () => {
+    const db = await freshDb();
+    const dry = { dryRun: true };
+
+    expect(await handleKofi(db, payload({ verification_token: "wrong" }), TOKEN, new Date(), dry)).toMatchObject({
+      status: "rejected",
+      httpStatus: 401,
+    });
+    expect(await handleKofi(db, payload({ currency: "EUR" }), TOKEN, new Date(), dry)).toMatchObject({
+      status: "rejected",
+      reason: "unsupported currency EUR",
+    });
   });
 });

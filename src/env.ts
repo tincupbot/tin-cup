@@ -41,6 +41,12 @@ export type Env = {
 
   /** Ko-fi page handle, e.g. "tincupbot". Absent means the hat has no destination yet. */
   KOFI_HANDLE?: string;
+  /**
+   * Acknowledge Ko-fi webhooks without booking them. Transient, deploy-time
+   * only — see `kofiDryRun`. Never committed to wrangler.toml; the guard
+   * enforces that, because left on it would swallow real donations.
+   */
+  KOFI_DRY_RUN?: string;
 
   // --- Secrets. Never committed, never logged, never rendered. ---
   /** Ko-fi webhook verification token. Absent locally; the webhook rejects when absent. */
@@ -101,6 +107,24 @@ export function kofiUrl(env: Env): string | null {
   if (!handle) return null;
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(handle)) return null;
   return `https://ko-fi.com/${handle}`;
+}
+
+/**
+ * Webhook dry run: verify, understand, acknowledge — and write nothing.
+ *
+ * Proving the Ko-fi wiring needs a real delivery from Ko-fi, and a real
+ * delivery of a test payment is money that nobody was charged. This flag is how
+ * the URL, the shared token and the currency get proved without a fictional
+ * entry in a ledger that has no delete path.
+ *
+ * It is deliberately hostile to being left on: set only at deploy time
+ * (`wrangler deploy --var KOFI_DRY_RUN:true`), never in wrangler.toml, and
+ * reported by /health so it cannot hide. On, a genuine donation is
+ * acknowledged and dropped — which is worse than any bug it prevents, so it
+ * comes straight back off.
+ */
+export function kofiDryRun(env: Env): boolean {
+  return env.KOFI_DRY_RUN === "true";
 }
 
 /**

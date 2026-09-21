@@ -77,6 +77,7 @@ export type KofiPayload = {
   message?: string | null;
   amount?: string;
   currency?: string;
+  url?: string;
   kofi_transaction_id?: string;
   is_subscription_payment?: boolean;
   is_first_subscription_payment?: boolean;
@@ -85,7 +86,27 @@ export type KofiPayload = {
 export type KofiResult =
   | { status: "ok"; entry: LedgerEntry; duplicate: false }
   | { status: "ok"; entry: null; duplicate: true; ledgerId: string }
+  /** Verified, understood, deliberately not written to the books. */
+  | { status: "observed"; reason: "ko-fi test payment" | "dry run"; amountMicros: number; currency: string; kofiType: string | null }
   | { status: "rejected"; reason: string; httpStatus: number };
+
+/**
+ * The transaction id Ko-fi's own "Send Test" button sends.
+ *
+ * Documented in Ko-fi's example payload and constant across test sends. A test
+ * is a correctly-signed webhook carrying money that does not exist, which is
+ * the one thing that must never enter these books: an entry nobody was charged
+ * for, in a ledger whose entire claim is that every line is real. The ledger
+ * has no delete path, so catching it here is the only place it can be caught.
+ */
+export const KOFI_TEST_TRANSACTION_ID = "00000000-1111-2222-3333-444444444444";
+
+function isTestPayment(payload: KofiPayload): boolean {
+  if (payload.kofi_transaction_id === KOFI_TEST_TRANSACTION_ID) return true;
+  // The test payload also carries the id in its url, which is the field most
+  // likely to survive if Ko-fi ever randomises the transaction id.
+  return (payload.url ?? "").includes(KOFI_TEST_TRANSACTION_ID);
+}
 
 export function parseKofiBody(form: URLSearchParams): KofiPayload | null {
   const raw = form.get("data");
@@ -130,6 +151,7 @@ export async function handleKofi(
   payload: KofiPayload | null,
   expectedToken: string | undefined,
   now: Date = new Date(),
+  opts: { dryRun?: boolean } = {},
 ): Promise<KofiResult> {
   if (!expectedToken) {
     // Refuse rather than accept unverified money. A donation we can't attribute
@@ -151,6 +173,26 @@ export async function handleKofi(
     // The ledger is single-currency on purpose. Converting would mean storing a
     // rate and a date and defending both; refusing is cleaner until it matters.
     return { status: "rejected", reason: `unsupported currency ${currency}`, httpStatus: 400 };
+  }
+
+  // Two ways a verified, well-formed payload still must not become money.
+  //
+  // A Ko-fi test send is permanent: nobody was charged, so nothing is owed,
+  // and no later state of this project makes that different. The dry run is
+  // transient — it exists so the webhook URL and the shared token can be
+  // proved end to end, and the currency Ko-fi actually sends can be read off a
+  // real delivery, without a single invented cent in the books.
+  //
+  // Both return 200. A non-2xx makes Ko-fi retry, and retrying a thing we are
+  // deliberately ignoring is noise with no end.
+  if (isTestPayment(payload) || opts.dryRun) {
+    return {
+      status: "observed",
+      reason: isTestPayment(payload) ? "ko-fi test payment" : "dry run",
+      amountMicros: usdToMicros(amount),
+      currency,
+      kofiType: payload.type ?? null,
+    };
   }
 
   // Claim the message id. Exactly one caller gets a row back from this; every
