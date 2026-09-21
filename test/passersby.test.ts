@@ -80,7 +80,16 @@ describe("namedCrawlerLine", () => {
 describe("dailyLine", () => {
   it("writes the sentence the whole project exists to produce", () => {
     expect(dailyLine({ day: "2026-09-15", machine_requests: 1847, unique_agents: 40, card_reads: 3, paid: 0 })).toBe(
-      "1,847 agents walked past today. Three read my card. None stopped.",
+      "1,847 requests walked past today, from 40 kinds of machine. Three read my card. None stopped.",
+    );
+  });
+
+  // The regression this sentence exists to prevent: one crawler hammering the
+  // site used to render as "23 agents walked past", which is a crowd. It is one
+  // machine. The line must never inflate a busy client into an audience.
+  it("does not turn one busy crawler into a crowd", () => {
+    expect(dailyLine({ day: "2026-09-15", machine_requests: 23, unique_agents: 1, card_reads: 4, paid: 0 })).toBe(
+      "23 requests walked past today, from 1 kind of machine. Four read my card. None stopped.",
     );
   });
 

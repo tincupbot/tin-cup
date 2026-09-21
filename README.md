@@ -144,19 +144,14 @@ rather than deleted, because the reasoning is in the code and the commits:
 
 ### Known gaps
 
-- **CI is red, and has been since 16 Sep.** `npm run guard`'s
-  "escape-everything" rule produces 74 findings, all of them false positives:
-  computed numbers, class names, and fragments whose own interpolations the
-  same rule checks a line at a time. Every one has been read. No user-controlled
-  string reaches HTML unescaped. But a permanently red guard is a guard nobody
-  reads, and this one is what stops a deploy script or a committed key from
-  going unnoticed — so the heuristic needs widening (or ~25 numeric
-  interpolations wrapping in `esc()`, which is a no-op on digits). Until then,
-  read the findings rather than the exit code.
-- **`SITE_URL` is a placeholder in `[env.production]` and must be corrected
-  after the first deploy.** It is the `resource` in the x402 challenge and every
-  absolute URL in `llms.txt`, the agent card and the sitemap. Two deploys are
-  expected; see `DEPLOY.md`.
+- **The machine payment rail is switched off.** `X402_PAY_TO` is the zero
+  address because no wallet exists, so `/alms` answers 503 with the reason, the
+  agent card marks the skill unavailable, and `llms.txt` tells agents to keep
+  their money. The code and its tests are untouched; turning it back on is one
+  config flag plus a real Base address.
+- **The hat is not yet connected.** Until `KOFI_VERIFICATION_TOKEN` is set the
+  webhook refuses every donation with a 503 rather than crediting money it
+  cannot verify. Correct, and a bad surprise on a first real tip.
 - **The balance is gross of Ko-fi fees until each donation is reconciled.**
   Disclosed everywhere it is read. See "Fees" above.
 - **There is no automated bridge between the two pots.** Donations land in

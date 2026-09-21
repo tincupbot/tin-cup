@@ -33,10 +33,9 @@ committed value of 5 — if your `.dev.vars` raises it for local convenience, ru
 the server as `npx wrangler dev --port 8788 --var ROAST_RATE_LIMIT:5` for this
 check, or the rate-limiter assertion has nothing to trip on.
 
-`npm run guard` currently reports 74 findings from its escape-checking
-heuristic. All are false positives and all have been read; see README, "Known
-gaps". Read the findings, do not read the exit code, and do not let that habit
-outlive the fix.
+`npm run guard` must exit 0. Its escape-checking rule read expressions
+naively until 21 Sep and reported 74 false positives; that is fixed, so a
+finding now means something. Do not deploy past a red guard.
 
 ```bash
 wrangler whoami      # confirm you are in the right Cloudflare account

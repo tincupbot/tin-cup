@@ -37,7 +37,16 @@ export type DayStats = {
 };
 
 /**
- * "1,847 agents walked past today. Three read my card. None stopped."
+ * "1,847 requests walked past today, from 40 kinds of machine. Three read my
+ * card. None stopped."
+ *
+ * The count is REQUESTS, and the sentence has to say so. It used to say "1,847
+ * agents", which reads as 1,847 visitors and is the same number one crawler
+ * makes on its own — an overstatement, in the flattering direction, on the one
+ * page that asks to be audited. `unique_agents` is distinct user-agent strings,
+ * which undercounts for the opposite reason (agents share a UA), so neither
+ * number alone is "how many machines came". Printing both, labelled for what
+ * they are, is the only honest version.
  *
  * `isToday` changes "today" to a date, so the same function serves both the live
  * site and a backfilled archive line.
@@ -51,11 +60,17 @@ export function dailyLine(stats: DayStats, isToday = true): string {
       : `Nothing walked past ${when}.`;
   }
 
+  const kinds = `${stats.unique_agents.toLocaleString("en-US")} ${plural(
+    stats.unique_agents,
+    "kind",
+    "kinds",
+  )} of machine`;
+
   const walked = `${stats.machine_requests.toLocaleString("en-US")} ${plural(
     stats.machine_requests,
-    "agent",
-    "agents",
-  )} walked past ${when}.`;
+    "request",
+    "requests",
+  )} walked past ${when}, from ${kinds}.`;
 
   const read =
     stats.card_reads === 0
