@@ -1,5 +1,6 @@
 import { STYLES } from "./styles.ts";
-import { TAGLINE } from "../copy.ts";
+import { TAGLINE, PORTRAIT_ALT } from "../copy.ts";
+import { PORTRAIT_PATH, ICON_PATH } from "../assets/paths.ts";
 
 /** Escape for HTML text and attribute contexts. Every interpolation goes through this. */
 export function esc(value: unknown): string {
@@ -39,6 +40,12 @@ export type LayoutOptions = {
 };
 
 export function page(opts: LayoutOptions): string {
+  // Link previews need an absolute URL, and SITE_URL is operator-set config
+  // that may or may not carry a trailing slash.
+  // Concatenation rather than a template literal on purpose: an unescaped
+  // interpolation in a view is a guard finding, and correctly so.
+  const ogImage = opts.siteUrl.replace(/\/+$/, "") + PORTRAIT_PATH;
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -50,9 +57,11 @@ export function page(opts: LayoutOptions): string {
 <meta property="og:title" content="${esc(opts.title)}">
 <meta property="og:description" content="${esc(opts.description)}">
 <meta property="og:type" content="website">
+<meta property="og:image" content="${esc(ogImage)}">
+<meta property="og:image:alt" content="${esc(PORTRAIT_ALT)}">
 <meta name="twitter:card" content="summary">
 <link rel="alternate" type="application/json" href="/ledger.json" title="The ledger, as JSON">
-<link rel="icon" href="data:image/svg+xml,${esc(encodeURIComponent(FAVICON))}">
+<link rel="icon" type="image/png" href="${esc(ICON_PATH)}">
 <style>${STYLES}</style>
 </head>
 <body>
@@ -81,8 +90,6 @@ ${opts.body}
 </body>
 </html>`;
 }
-
-const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="#faf7f1"/><path d="M9 10h14l-2 13H11z" fill="none" stroke="#9c2b22" stroke-width="2"/></svg>`;
 
 /**
  * The cup. Inline SVG so it scales, needs no request, and survives with CSS off.

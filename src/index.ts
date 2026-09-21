@@ -50,6 +50,8 @@ import {
   PAYMENT_HEADER,
   PAYMENT_RESPONSE_HEADER,
 } from "./x402.ts";
+import { pngResponse, PORTRAIT_PNG, ICON_PNG } from "./assets/serve.ts";
+import { PORTRAIT_PATH, ICON_PATH } from "./assets/paths.ts";
 import { page, esc } from "./views/layout.ts";
 import { homeBody, homeBanner, type HomeData, type Performance, type BuskNotice } from "./views/home.ts";
 import { graveBody } from "./views/gravestone.ts";
@@ -70,15 +72,17 @@ const FIXTURE_BANNER =
  * The CSP is the cheap one and the important one. This site ships zero bytes of
  * client-side JavaScript — the busk is a form POST and the repertoire is a radio
  * group — so `default-src 'none'` costs nothing and removes the entire class of
- * injected-script bugs. The only allowances are the inline stylesheet and the
- * data: URL favicon, and `form-action 'self'` so the busk still posts.
+ * injected-script bugs. The only allowances are the inline stylesheet, images
+ * from this origin and from data: URLs, and `form-action 'self'` so the busk
+ * still posts. No third-party origin can serve a pixel here, which keeps the
+ * "no trackers" claim on the page structurally true rather than promised.
  *
  * If a future change needs a script tag, the correct response is to not need it.
  */
 const CSP = [
   "default-src 'none'",
   "style-src 'unsafe-inline'",
-  "img-src data:",
+  "img-src 'self' data:",
   "form-action 'self'",
   "base-uri 'none'",
   "frame-ancestors 'none'",
@@ -119,6 +123,10 @@ function edgeVerifiedBot(req: Request): boolean {
 app.use("*", async (c, next) => {
   await next();
   if (c.res.status === 404) return;
+  // A browser fetching the portrait is not a second visitor. Counting the
+  // image would report one human as two requests, on the one site whose
+  // product is that its numbers can be checked.
+  if (IMAGE_PATHS.has(new URL(c.req.url).pathname)) return;
   const paid = c.res.headers.get("x-tincup-paid") === "1";
   await logPasserBy(c.env.DB as unknown as Db, {
     path: new URL(c.req.url).pathname,
@@ -128,6 +136,15 @@ app.use("*", async (c, next) => {
     rawSampleOneIn: passersbySampleOneIn(c.env),
   });
 });
+
+// ---------------------------------------------------------------------------
+// The two images. Everything else on this site is text.
+// ---------------------------------------------------------------------------
+
+const IMAGE_PATHS = new Set([PORTRAIT_PATH, ICON_PATH]);
+
+app.get(PORTRAIT_PATH, (c) => pngResponse(PORTRAIT_PNG, c.req.raw));
+app.get(ICON_PATH, (c) => pngResponse(ICON_PNG, c.req.raw));
 
 async function shell(
   c: { env: Env },

@@ -80,12 +80,14 @@ blockquote { margin: 0; padding-left: 1.1rem; border-left: 2px solid var(--rule-
   max-width: 56rem; margin: 0 auto; padding: 1.5rem 1.5rem 1.4rem;
   display: grid; grid-template-columns: auto 1fr; gap: 1.4rem; align-items: start;
 }
+/* The portrait. A drawing, in a frame, on the paper — the one image the site
+   has, so it is hung rather than floated: thin rule, off-white mount, and the
+   ink-coloured backing that every other bordered thing here uses. */
 .portrait {
-  width: 92px; height: 92px; border: 1px solid var(--rule-2); background: var(--paper);
-  display: grid; place-items: center; font-family: var(--mono); font-size: 0.58rem;
-  line-height: 1.5; color: var(--ink-3); text-align: center; letter-spacing: 0.06em; padding: 0.3rem;
+  width: 128px; height: 128px; display: block;
+  border: 1px solid var(--rule-2); background: var(--paper);
+  padding: 0.3rem; object-fit: contain;
 }
-.portrait b { display: block; font-size: 1.7rem; color: var(--ink); letter-spacing: -0.02em; font-weight: 600; }
 .banner h1 { margin: 0 0 0.35rem; font-size: 1.24rem; font-weight: 600; }
 .banner p { margin: 0; font-size: 0.98rem; color: var(--ink-2); line-height: 1.55; }
 .banner .row { margin-top: 0.95rem; display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
@@ -351,7 +353,7 @@ footer p { margin: 0 0 0.5rem; line-height: 1.6; }
 
 @media (max-width: 34rem) {
   .banner-in { grid-template-columns: 1fr; }
-  .portrait { width: 74px; height: 74px; }
+  .portrait { width: 96px; height: 96px; }
   .vitals { grid-template-columns: repeat(2, 1fr); }
   .vital:nth-child(2) { border-right: 0; }
   .vital:nth-child(1), .vital:nth-child(2) { border-bottom: 1px solid var(--rule); }

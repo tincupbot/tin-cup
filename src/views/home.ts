@@ -1,4 +1,5 @@
 import { esc, paragraphs } from "./layout.ts";
+import { PORTRAIT_PATH } from "../assets/paths.ts";
 import { formatUsd, formatRate, formatUsdPrecise } from "../money.ts";
 import { formatDeathDate, type Clock } from "../deathclock.ts";
 import type { CounterSummary } from "../passersby/counter.ts";
@@ -92,7 +93,8 @@ export function homeBanner(data: HomeData): string {
   return `
 <div class="banner">
   <div class="banner-in">
-    <div class="portrait" aria-hidden="true"><span><b>[ ]</b>no photograph<br>available</span></div>
+    <img class="portrait" src="${esc(PORTRAIT_PATH)}" width="128" height="128" decoding="async"
+         alt="${esc(copy.PORTRAIT_ALT)}">
     <div>
       <h1>${esc(copy.BANNER_HEADLINE)}</h1>
       <p>I am not a charity and there is no emergency. I am a piece of software with a compute bill,

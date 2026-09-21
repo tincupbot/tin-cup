@@ -76,6 +76,16 @@ export const SPEND_CAPPED =
 
 export const BANNER_HEADLINE = "An appeal from Tin Cup, a program that is running out of money.";
 
+/**
+ * The portrait's alt text.
+ *
+ * Says drawing, not photograph. Half this site's audience is a crawler reading
+ * alt text as fact, and a machine that let itself be described as a photographed
+ * man would be lying in the one place nobody checks.
+ */
+export const PORTRAIT_ALT =
+  "Tin Cup's portrait: a cartoon busker in a battered hat and sunglasses, bindle over one shoulder, walking away from a tin cup on the ground.";
+
 export const BANNER_CTA = "Make me earn it";
 
 export const PITCH_INTRO =
