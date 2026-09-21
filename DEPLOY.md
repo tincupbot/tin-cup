@@ -279,17 +279,35 @@ Ko-fi → Settings → API:
 - **Webhook URL:** `https://<host>/webhook/kofi`
 - **Verification Token:** the same value you put in `KOFI_VERIFICATION_TOKEN`.
 
-Ko-fi's own page has a "send test payment" button. Use it, then:
+Ko-fi's own page has a "send test payment" button. **It does not create a ledger
+entry, and it must not** — it is a correctly-signed webhook for a donation
+nobody was charged for, and the ledger has no delete path. `src/kofi.ts`
+recognises it, answers 200 so Ko-fi stops retrying, and books nothing.
+
+So the proof is the delivery log, not the books:
 
 ```bash
-curl -s https://<host>/ledger.json | jq '.entries[-1] | {kind, amount_micros, description}'
+# Did anything arrive at all? Public, and null until the webhook has ever fired.
+curl -s https://<host>/health | jq '{kofi_configured, kofi_dry_run, kofi_last_delivery_at}'
+
+# What arrived, and what was done with it. Operator-only.
+curl -s -H "x-tincup-admin: $ADMIN_TOKEN" https://<host>/webhooks | jq '.deliveries[0]'
 ```
 
-A `donation` entry, with `· gross, fees not yet reconciled` in the description.
-Press the test button a second time: the ledger must **not** gain a second entry
-for the same `message_id`.
+Expect `outcome: "test_payment"` (or `"dry_run"` if you deployed with
+`--var KOFI_DRY_RUN:true`), `http_status: 200`, `ledger_id: null`, and the
+`currency` Ko-fi actually sends — which is the field worth reading, see below.
 
-Two things that will bite here:
+A rejected delivery lands here too, with its reason, which is the difference
+between "Ko-fi never called" and "Ko-fi called and was turned away". Before this
+log existed, those two looked identical unless somebody happened to be running
+`wrangler tail` at that exact second.
+
+To prove the path that *does* book money, take a real donation — or tip the page
+a dollar yourself and reconcile it later. Send the same delivery twice: the
+second must come back `outcome: "duplicate"` pointing at the same `ledger_id`.
+
+Three things that will bite here:
 
 - **Currency.** `src/kofi.ts` rejects anything that is not USD with a 400. A
   Ko-fi page defaulting to EUR means every donation is refused, never reaches
@@ -299,6 +317,10 @@ Two things that will bite here:
   what arrives after Ko-fi's cut and the processor's. That gap is disclosed
   everywhere and corrected later from the payout statement, with
   `scripts/operator-entry.ts` and `--kind fee`.
+- **Turn the dry run off once it is proved.** While `KOFI_DRY_RUN` is on, a
+  genuine donation is verified, acknowledged with a 200 and *dropped* — which is
+  worse than anything it protects against. Redeploy without the `--var` and
+  confirm `kofi_dry_run: false` on `/health`.
 
 ## 9. Afterwards
 

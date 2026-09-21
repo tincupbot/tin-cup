@@ -131,6 +131,22 @@ workers_dev = true
 # point somewhere else. On a site that asks to be audited, one address.
 preview_urls = false
 
+# Persisted Workers Logs.
+#
+# Without this the only record of a webhook delivery that is deliberately not
+# written to the books — a Ko-fi test send, a dry run, a rejected payload — is a
+# console.log visible solely to whoever happens to be running `wrangler tail` at
+# that second. That made proving the Ko-fi path a live-watch problem: if the
+# operator clicks Send Test while nobody is tailing, there is no evidence it
+# arrived and no way to tell a delivery that never came from one that was
+# refused. Logs are retained ~7 days and are queryable after the fact.
+#
+# Nothing sensitive reaches them by construction: the webhook logs amount,
+# currency and event type only — never the verification token, never a
+# supporter's email or message.
+[env.production.observability]
+enabled = true
+
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "tincup"

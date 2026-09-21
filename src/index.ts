@@ -43,6 +43,7 @@ import { PRICING, PRICING_VERIFIED_ON, routineModel } from "./llm/pricing.ts";
 import { parseTurn, turnDef, type TurnKind } from "./llm/turns.ts";
 import { writeBlessing } from "./llm/roastwriter.ts";
 import { handleKofi, parseKofiBody } from "./kofi.ts";
+import { lastDeliveryAt, outcomeOf, recentDeliveries, recordDelivery } from "./webhooklog.ts";
 import { runAgentLoop } from "./agentloop.ts";
 import {
   buildChallenge,
@@ -873,6 +874,19 @@ app.post("/webhook/kofi", async (c) => {
   const dryRun = kofiDryRun(c.env);
   const result = await handleKofi(db, payload, c.env.KOFI_VERIFICATION_TOKEN, new Date(), { dryRun });
 
+  // Record the knock before answering it, whatever the answer is. A delivery we
+  // refuse or deliberately ignore is precisely the one with no other trace, and
+  // "nothing arrived" and "something arrived and was turned away" must not look
+  // identical afterwards. Never blocks the response: a failure to write the
+  // operational log is not a reason to make Ko-fi retry a donation we handled.
+  const { outcome, reason, ledgerId } = outcomeOf(result);
+  const httpStatus = result.status === "rejected" ? result.httpStatus : 200;
+  try {
+    await recordDelivery(db, { source: "ko-fi", outcome, reason, httpStatus, payload, ledgerId });
+  } catch (err) {
+    console.log(`[kofi] delivery log write failed: ${String((err as Error)?.message ?? err)}`);
+  }
+
   if (result.status === "rejected") {
     return c.json({ ok: false, reason: result.reason }, result.httpStatus as 400);
   }
@@ -952,6 +966,12 @@ app.get("/health", async (c) => {
       kofi_configured: Boolean(c.env.KOFI_VERIFICATION_TOKEN),
       /** On means verified donations are acknowledged and not booked. Loud on purpose. */
       kofi_dry_run: kofiDryRun(c.env),
+      /**
+       * Null means the webhook has never been hit — which is the difference
+       * between "Ko-fi is configured" and "Ko-fi has been proved". Public
+       * because it says only that something arrived, never what or from whom.
+       */
+      kofi_last_delivery_at: await lastDeliveryAt(db, "ko-fi"),
       admin_endpoints_configured: Boolean(adminToken(c.env)),
       contains_dev_fixture_data: fixture,
       now: now.toISOString(),
@@ -988,6 +1008,22 @@ app.get("/outbox", async (c) => {
     .prepare(`SELECT id, created_at, day, channel, status, body FROM outbox ORDER BY id DESC LIMIT 30`)
     .all();
   return c.json({ note: copy.OUTBOX_NOTE, posts: results });
+});
+
+/**
+ * Operator-only, deliberately. This is not part of the books and does not
+ * belong on the public pages: the rows include payloads that were turned away,
+ * and publishing which shapes of forgery get which rejection is a map for
+ * anyone minded to try. The money itself is public at /ledger.json — this is
+ * the plumbing behind it.
+ */
+app.get("/webhooks", async (c) => {
+  if (!adminOk(c)) return notFound(c);
+  const db = c.env.DB as unknown as Db;
+  return c.json({
+    note: "Every delivery that reached the webhook, booked or not. Claims, not money — the books are /ledger.json.",
+    deliveries: await recentDeliveries(db),
+  });
 });
 
 // ---------------------------------------------------------------------------
