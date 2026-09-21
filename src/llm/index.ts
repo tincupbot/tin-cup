@@ -1,9 +1,11 @@
 import type { Env, SpendCaps } from "../env.ts";
-import type { LlmProvider, LlmRequest } from "./provider.ts";
+import type { LlmProvider, LlmRequest, ProviderFailure } from "./provider.ts";
+import { ProviderUnavailableError } from "./provider.ts";
 import { MockProvider } from "./mock.ts";
 import { AnthropicProvider } from "./anthropic.ts";
 import { OpenAiProvider } from "./openai.ts";
 import type { Db } from "../db.ts";
+import { getState, setState } from "../db.ts";
 import { append } from "../ledger/ledger.ts";
 import { readClock, AgentIsDeadError } from "../deathclock.ts";
 import { PRICING, PRICING_VERIFIED_ON } from "./pricing.ts";
@@ -30,14 +32,70 @@ export function makeProvider(env: Env): LlmProvider {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Whether the thing that sells tokens is currently selling us any.
+// ---------------------------------------------------------------------------
+
+/**
+ * The ledger says whether Tin Cup can *afford* to think. This says whether it
+ * can actually *do* it. They are different questions and, because donations and
+ * inference credit live in two accounts with a human in between, they get
+ * different answers — a balance with five days on it and an API account that
+ * has been empty since Tuesday is a site telling a true number and a false
+ * story.
+ *
+ * So the last provider outcome is recorded, and /health reports it and stops
+ * returning 200 while it is bad. This is a status, not money: it lives in the
+ * `state` table, never in the ledger. Nothing about a failed call belongs in
+ * the books, because a failed call cost nothing.
+ */
+export const PROVIDER_STATUS_KEY = "provider_status";
+
+export type ProviderStatus =
+  | { ok: true; reason: null; detail: null; since: null }
+  | { ok: false; reason: ProviderFailure; detail: string; since: string };
+
+export const PROVIDER_OK: ProviderStatus = { ok: true, reason: null, detail: null, since: null };
+
+export async function readProviderStatus(db: Db): Promise<ProviderStatus> {
+  const raw = await getState(db, PROVIDER_STATUS_KEY);
+  if (!raw) return PROVIDER_OK;
+  try {
+    const parsed = JSON.parse(raw) as ProviderStatus;
+    return parsed.ok === false ? parsed : PROVIDER_OK;
+  } catch {
+    return PROVIDER_OK;
+  }
+}
+
+async function noteProviderFailure(db: Db, err: ProviderUnavailableError, now: Date): Promise<void> {
+  // `err.detail` is ours — a status code and a classification, never the
+  // provider's response body, which can name the account.
+  const status: ProviderStatus = {
+    ok: false,
+    reason: err.reason,
+    detail: err.detail,
+    since: now.toISOString(),
+  };
+  await setState(db, PROVIDER_STATUS_KEY, JSON.stringify(status));
+}
+
+/** Clear the flag, but only if it is set: the happy path should not write. */
+async function noteProviderOk(db: Db): Promise<void> {
+  if ((await readProviderStatus(db)).ok) return;
+  await setState(db, PROVIDER_STATUS_KEY, JSON.stringify(PROVIDER_OK));
+}
+
 /** Thrown when the global daily inference budget is used up. */
 export class SpendCapReachedError extends Error {
-  constructor(
-    readonly spentMicros: number,
-    readonly capMicros: number,
-  ) {
+  readonly spentMicros: number;
+  readonly capMicros: number;
+
+  constructor(spentMicros: number, capMicros: number) {
     super(`daily spend cap reached: ${spentMicros}/${capMicros} micros`);
     this.name = "SpendCapReachedError";
+    this.spentMicros = spentMicros;
+    this.capMicros = capMicros;
   }
 }
 
@@ -93,10 +151,21 @@ export async function billedComplete(
     Math.floor((affordableMicros * 1_000_000) / price.output_micros_per_mtok),
   );
 
-  const res = await provider.complete({
-    ...req,
-    maxTokens: Math.min(req.maxTokens, affordableOutputTokens),
-  });
+  let res;
+  try {
+    res = await provider.complete({
+      ...req,
+      maxTokens: Math.min(req.maxTokens, affordableOutputTokens),
+    });
+  } catch (err) {
+    // Nothing is appended: a call that did not complete cost nothing, and an
+    // entry for it would be an invented number. The outage is recorded outside
+    // the books so the rest of the site can stop claiming to be able to think.
+    if (err instanceof ProviderUnavailableError) await noteProviderFailure(db, err, now);
+    throw err;
+  }
+
+  await noteProviderOk(db);
 
   await append(db, {
     direction: "out",
@@ -121,4 +190,5 @@ export async function billedComplete(
   return res;
 }
 
-export type { LlmProvider, LlmRequest, LlmResponse } from "./provider.ts";
+export type { LlmProvider, LlmRequest, LlmResponse, ProviderFailure } from "./provider.ts";
+export { ProviderUnavailableError } from "./provider.ts";

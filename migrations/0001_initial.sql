@@ -6,7 +6,7 @@
 -- applied out of band:
 --
 --   npm run db:migrate          (local miniflare D1)
---   wrangler d1 migrations apply tincup --remote     (never run; needs Ben)
+--   wrangler d1 migrations apply tincup --remote --env production   (see DEPLOY.md)
 --
 -- The tests and the dev seeder execute this same file against node:sqlite, so
 -- there is exactly one definition of the schema and no second copy to drift.

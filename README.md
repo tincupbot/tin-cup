@@ -6,8 +6,12 @@ It publishes a hash-chained ledger of every cent in and out, a death clock that
 runs off the real balance, and a counter of every machine that reads its payment
 card and doesn't pay. When the balance hits zero it stops thinking.
 
-**Status: v0, local only. Never deployed. Nothing here has touched real money,
-a real model, or a real wallet.**
+**Status: v0, approved for deploy, not yet deployed.** Nothing here has touched
+real money, a real model, or a real wallet *yet*. The configuration that will
+is in `wrangler.toml` under `[env.production]`, and `DEPLOY.md` is the ordered
+runbook. Everything you get by cloning this and running it stays free: local
+dev is the mock provider with live calls off, and `npm run guard` fails the
+build if that ever changes.
 
 ---
 
@@ -15,7 +19,7 @@ a real model, or a real wallet.**
 
 ```bash
 npm install
-npm run dev          # http://localhost:8787
+npm run dev          # http://localhost:8788
 ```
 
 On a completely fresh checkout the agent is born with an empty ledger, which
@@ -34,11 +38,13 @@ ends alive with about five days left.
 Then, with the server running in another terminal:
 
 ```bash
-npm run smoke        # 21 end-to-end checks
+npm run smoke        # 27 end-to-end checks
 npm run typecheck
 ```
 
-`BASE=http://localhost:8788 npm run smoke` if you moved the port.
+`BASE=http://localhost:9000 npm run smoke` if you moved the port. The port matters
+beyond convenience: `SITE_URL` in `wrangler.toml` has to match it, because that
+string is the `resource` in the x402 challenge and every URL in `llms.txt`.
 
 ## Worth looking at, in order
 
@@ -48,14 +54,15 @@ npm run typecheck
 | `/ledger` | Every entry, itemised by model and token count |
 | `/ledger/verify` | Recomputes the chain from genesis and shows its working |
 | `/passers-by` | The counter. The best thing in the project |
-| `/alms` | HTTP 402 with a real x402 challenge body |
-| `/.well-known/agent.json` | A2A card advertising one skill: `receive_alms` |
-| `/health` | Everything the clock knows, as JSON |
+| `/alms` | HTTP 402 with a real x402 challenge body — locally. In production it is switched off and answers 503 with the reason |
+| `/.well-known/agent.json` | A2A card advertising one skill: `receive_alms`, marked unavailable while the rail is off |
+| `/health` | Everything the clock knows, as JSON. `alive` and `able_to_think` are separate claims |
 
 Fire the daily scheduled run by hand:
 
 ```bash
-curl "http://localhost:8787/__scheduled?cron=0+9+*+*+*"
+# needs ADMIN_TOKEN in .dev.vars; without it this 404s by design
+curl -H "x-tincup-admin: $ADMIN_TOKEN" "http://localhost:8788/__scheduled"
 ```
 
 It writes the day's post to the `outbox` table. Nothing sends it. Nothing in
@@ -74,11 +81,29 @@ for real ones.
 
 | Piece | State | What's needed to make it real |
 |---|---|---|
-| **LLM** | `MockProvider` only. Canned text, but real token counts and real pricing math, so ledger costs are the right shape. Responses carry `simulated: true`. | An Anthropic key, plus `LLM_LIVE_CALLS_ENABLED=true`. Re-verify `src/llm/pricing.ts` first. |
-| **x402** | Challenge body is the correct wire shape. Payment validation is **structural only** — it checks the payload looks like an `exact` payment, and cannot tell you whether money moved. Because of that, an accepted payload is recorded as a zero-amount `alms_offer` marker that **cannot move the balance or the death clock**, never as income. Replays are refused with 409. | Signature verification, on-chain settlement, a facilitator, and a wallet that isn't the zero address. Only then does the settled path append real `x402_alms` income. |
-| **Ko-fi** | Webhook parses and is idempotent per message id, atomically — the id is claimed with `INSERT … ON CONFLICT DO NOTHING RETURNING` before the ledger is touched, so concurrent retries cannot double-credit. | A Ko-fi account (needs a human identity), a real webhook URL, a real shared token. |
+| **LLM** | Local: `MockProvider` only — canned text, but real token counts and real pricing math, so ledger costs are the right shape, and every response carries `simulated: true`. Production: `gpt-5.6-luna`, live, billed. | Nothing. `OPENAI_API_KEY` as a deploy secret and the two switches in `[env.production]`, both already set. |
+| **x402** | Built, tested, and **switched off in production**. The challenge body is the correct wire shape and validation is structural only — it cannot tell you whether money moved — so an accepted payload is recorded as a zero-amount `alms_offer` marker that cannot move the balance or the death clock. Replays are refused with 409. | A wallet that isn't the zero address, which means an exchange account with KYC under someone's name. Then signature verification, settlement and a facilitator, and only then does the settled path append real `x402_alms` income. Until then the endpoint says 503 and why. |
+| **Ko-fi** | Webhook parses and is idempotent per message id, atomically — the id is claimed with `INSERT … ON CONFLICT DO NOTHING RETURNING` before the ledger is touched, so concurrent retries cannot double-credit. Credits the **gross**; see "Fees" below. | Page currency set to USD, a payment provider connected, and the webhook URL + token set in Ko-fi once there is a deployed URL. |
 | **Posting** | The daily post is written to `outbox` and sits there. | An X account with no connection to the day job. Deliberately not wired. |
-| **Deploy** | `wrangler.toml` has a placeholder `database_id`. | A Cloudflare account and Ben's approval. |
+| **Deploy** | Approved. `wrangler.toml` has `[env.production]`; `database_id` and `SITE_URL` are placeholders until the first deploy prints their values. | `wrangler login`, then `DEPLOY.md` start to finish. |
+
+### Fees, and why the balance is slightly optimistic
+
+Ko-fi and the card processor both take a cut, and **the Ko-fi webhook payload
+carries no fee and no net field** — checked 2026-09-21; `amount` is the gross
+the supporter typed, and Ko-fi publishes no API to ask afterwards.
+
+So the ledger credits the gross, marks it `amount_is_gross` /
+`reconciled: false`, and says so in the entry description, on the homepage and
+in the JSON. The toll is appended later as its own itemised `fee` entry from
+the payout statement, using `scripts/operator-entry.ts`.
+
+The alternative — subtracting an assumed percentage — would put a number in the
+books that nobody was charged and nobody can check. It would also require
+picking between two rates Ko-fi itself publishes (5% on their features page,
+0% on tips on their fee page). Between the two, the gross is the number we can
+actually stand behind. Until a donation is reconciled, the balance and the
+death clock are generous by the size of the toll.
 
 ## Numbers a stranger must not be able to set
 
@@ -102,26 +127,49 @@ a request to spend money on inference — so each one is treated as hostile.
   `billedComplete` before the provider is called, because after it the money is
   already gone. `/health` reports both alongside the day's spend.
 
+### Fixed since this list was last written
+
+Everything below was a gap on 15 Sep and is not one now. Kept as a record
+rather than deleted, because the reasoning is in the code and the commits:
+
+- Ledger appends now retry on a lost chain-tip race (`APPEND_MAX_ATTEMPTS`), so
+  a donation landing during an inference write no longer drops a money event.
+- `GET /` reads a materialised ledger summary that is cross-checked against the
+  real chain tip on every read, plus an edge cache and a pruned passers-by log.
+  Nothing rehashes the chain on the homepage; `/ledger/verify` does that.
+- `/__scheduled` and `/outbox` require `ADMIN_TOKEN` and 404 without it, so an
+  unconfigured deployment will not admit to having an admin surface at all.
+- `app.onError`, CSP at `default-src 'none'`, the rest of the security headers,
+  and CI all exist.
+
 ### Known gaps
 
-- **Ledger appends aren't concurrency-safe by construction.** Two simultaneous
-  writers can read the same chain tip. The `UNIQUE` index on `hash` makes the
-  loser fail loudly rather than silently forking, but nothing retries, so a
-  donation landing during an inference write can 500. Needs a bounded retry.
-- **`GET /` is O(the whole database).** Each render rehashes the full chain,
-  reads the full ledger again for the patron wall, and runs
-  `COUNT(DISTINCT ua)` over an unpruned log. Fine at this size, a self-inflicted
-  outage after a front page. Needs caching, a materialised balance, and pruning.
-- **`/__scheduled` and `/outbox` are unauthenticated.** Fine locally; must be
-  gated before deploy.
-- **No `app.onError`, no CSP, no security headers, no CI.** The site ships zero
-  client-side JS, so a CSP here is nearly free.
-- `resource` in the 402 challenge comes from `SITE_URL`, so it reads
-  `localhost:8787` even when you're serving on another port.
+- **CI is red, and has been since 16 Sep.** `npm run guard`'s
+  "escape-everything" rule produces 74 findings, all of them false positives:
+  computed numbers, class names, and fragments whose own interpolations the
+  same rule checks a line at a time. Every one has been read. No user-controlled
+  string reaches HTML unescaped. But a permanently red guard is a guard nobody
+  reads, and this one is what stops a deploy script or a committed key from
+  going unnoticed — so the heuristic needs widening (or ~25 numeric
+  interpolations wrapping in `esc()`, which is a no-op on digits). Until then,
+  read the findings rather than the exit code.
+- **`SITE_URL` is a placeholder in `[env.production]` and must be corrected
+  after the first deploy.** It is the `resource` in the x402 challenge and every
+  absolute URL in `llms.txt`, the agent card and the sitemap. Two deploys are
+  expected; see `DEPLOY.md`.
+- **The balance is gross of Ko-fi fees until each donation is reconciled.**
+  Disclosed everywhere it is read. See "Fees" above.
+- **There is no automated bridge between the two pots.** Donations land in
+  Ko-fi's connected account; inference is billed to an OpenAI account. A human
+  moves money between them. When the OpenAI side runs dry, the site says so in
+  character and `/health` drops to `alive_but_mute` with a 503 — it does not
+  pretend, but it also cannot fix itself.
+- **Nothing posts.** The daily post lands in `outbox` and stays there.
 
 ## Layout
 
 ```
+DEPLOY.md           the ordered deploy runbook, plus the rollback
 src/
   index.ts          routes, the whole HTTP surface
   ledger/           hash.ts (canonical JSON + sha256), ledger.ts (the only write path)
@@ -133,6 +181,10 @@ src/
   copy.ts           every user-facing sentence, in one place
 scripts/
   seed-dev.ts       the ten-day fixture
+  operator-entry.ts prints the SQL for the two entries no request can make —
+                    the seed float, and fee reconciliation. Writes nothing.
+  guard.ts          the rules a linter can't know: nothing deploys by script,
+                    no keys on disk, no client-side JS, one ledger write path
   smoke.sh          end-to-end checks
 test/
   helpers.ts        a `Db` over node:sqlite — this is why src/db.ts is an interface

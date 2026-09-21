@@ -1,4 +1,5 @@
 import type { LlmProvider, LlmRequest, LlmResponse } from "./provider.ts";
+import { ProviderUnavailableError, classifyHttpFailure } from "./provider.ts";
 import { costMicros } from "./pricing.ts";
 
 /**
@@ -25,9 +26,10 @@ export type AnthropicProviderConfig = {
   liveCallsEnabled: boolean;
 };
 
-export class LiveCallsDisabledError extends Error {
+/** Same reasoning as the OpenAI one: a missing key is "I cannot think", not a 500. */
+export class LiveCallsDisabledError extends ProviderUnavailableError {
   constructor(reason: string) {
-    super(`live LLM calls are disabled: ${reason}`);
+    super("disabled", reason);
     this.name = "LiveCallsDisabledError";
   }
 }
@@ -35,7 +37,11 @@ export class LiveCallsDisabledError extends Error {
 export class AnthropicProvider implements LlmProvider {
   readonly name = "anthropic";
 
-  constructor(private readonly config: AnthropicProviderConfig) {}
+  private readonly config: AnthropicProviderConfig;
+
+  constructor(config: AnthropicProviderConfig) {
+    this.config = config;
+  }
 
   async complete(req: LlmRequest): Promise<LlmResponse> {
     if (!this.config.liveCallsEnabled) {
@@ -45,23 +51,28 @@ export class AnthropicProvider implements LlmProvider {
       throw new LiveCallsDisabledError("no ANTHROPIC_API_KEY in the environment");
     }
 
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": this.config.apiKey,
-        "anthropic-version": API_VERSION,
-      },
-      body: JSON.stringify({
-        model: req.model,
-        max_tokens: req.maxTokens,
-        system: req.system,
-        messages: [{ role: "user", content: req.prompt }],
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(API_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": this.config.apiKey,
+          "anthropic-version": API_VERSION,
+        },
+        body: JSON.stringify({
+          model: req.model,
+          max_tokens: req.maxTokens,
+          system: req.system,
+          messages: [{ role: "user", content: req.prompt }],
+        }),
+      });
+    } catch (err) {
+      throw new ProviderUnavailableError("unreachable", String((err as Error)?.message ?? err));
+    }
 
     if (!res.ok) {
-      throw new Error(`anthropic api returned ${res.status}`);
+      throw classifyHttpFailure(res.status, await res.text().catch(() => ""));
     }
 
     const body = (await res.json()) as {

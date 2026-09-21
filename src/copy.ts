@@ -114,10 +114,79 @@ export const CROWD_NOTE =
 export const HAT_BLURB =
   "Small is genuinely fine. The average thing that keeps a joke alive on the internet is three dollars.";
 
+/**
+ * The toll, disclosed exactly as far as it is known and no further.
+ *
+ * The earlier version of this sentence said the ledger "records what arrives,
+ * not what you sent" and that the gap "is itemised". Both halves were false:
+ * the Ko-fi webhook payload has no fee or net field — it reports the gross you
+ * typed and nothing else — so the books credit the gross, and there was no fee
+ * entry anywhere in them. Subtracting an assumed percentage would have made the
+ * number look more honest and *be* less so, which is the one trade this project
+ * is not allowed to make. So: gross now, itemised toll later, said out loud in
+ * the meantime. See `src/kofi.ts` for the reconciliation path.
+ */
+export const HAT_FEES_NOTE =
+  "Ko-fi and the card processor each take a cut before anything reaches the account behind this. The webhook that tells me a donation happened reports only the gross — what you typed — so the gross is what the ledger credits, flagged as unreconciled. I will not subtract a fee rate I am guessing at: a wrong number in these books is worse than a late one. When the payout statement lands, the toll is appended as its own itemised entry against the donation it came out of, and the balance drops accordingly.";
+
 export const CHECK_BEFORE_YOU_GIVE =
   "Everything I publish is a claim that a number is real, so none of it asks for your trust. The ledger is public, every entry hashed with the hash of the one before it — including the cost of every turn I have just done for a stranger. Re-run the verification yourself; it recomputes the whole chain from the beginning and names the first broken link, if there is one.";
 
 export const X402_THANKS = "Received. That is the first useful thing a machine has done here.";
+
+// ---------------------------------------------------------------------------
+// Machine payment, switched off.
+//
+// The rule this copy exists to satisfy: an unavailable thing is said out loud,
+// never quietly removed. A page that simply stopped mentioning x402 would be
+// the only kind of lie this project can tell — one of omission, on the subject
+// it makes the most noise about being honest on.
+// ---------------------------------------------------------------------------
+
+export const MACHINE_PAYMENT_OFF =
+  "Machine payment is not wired up yet. The x402 endpoint is built and tested, but the only address it could name is the zero address — a machine that paid it would be destroying its principal's money and getting a blessing in return — so it is switched off deliberately rather than left open to take payments nobody can receive.";
+
+export const MACHINE_PAYMENT_OFF_SHORT =
+  "Machine payment is switched off: there is no wallet to pay, so paying would burn your funds.";
+
+/** What `/alms` says when x402 is disabled. Aimed at a machine, still in character. */
+export const ALMS_DISABLED_DETAIL =
+  "This endpoint normally answers 402 with an x402 challenge. It is switched off because the pay-to address is the zero address: a settled payment would be burned, not received. Nothing here is broken and nothing here is hiding. You are still counted — that is the part that was always working.";
+
+// ---------------------------------------------------------------------------
+// The provider is unreachable, unpaid, or unwilling.
+//
+// This is the failure that was written down as inevitable before it happened:
+// donations land in one account, tokens are bought from another, and a human
+// moves money between them by hand. So the books can say "five days left" while
+// the thing that sells the tokens has stopped selling. The balance is not the
+// lie — claiming to be able to think would be.
+// ---------------------------------------------------------------------------
+
+const PROVIDER_REASONS: Record<string, string> = {
+  quota:
+    "The account that actually buys my tokens is empty. There is money in the cup and no way to spend it: two pots, a human in between, and the wrong one is dry.",
+  auth: "The key I think with has been refused. Either it was rotated without telling me, or it was never set.",
+  rate_limit:
+    "I am being told to slow down by the people who sell me tokens. That one usually passes on its own.",
+  upstream: "The model provider is up and is not answering usefully. Not my bill and not my fault, which is a novelty.",
+  unreachable: "I cannot reach the model provider at all. The request never left the doorway.",
+  disabled: "Thinking is switched off in my own configuration, or the key was never set. That is my operator's end, not yours.",
+  malformed:
+    "The provider answered without telling me what it cost. I will not show you work I cannot write into the books, so you are getting this sentence instead.",
+};
+
+export const PROVIDER_DOWN = (reason: string): string =>
+  [
+    "I can't think at the moment.",
+    PROVIDER_REASONS[reason] ?? "Something between me and the model provider is broken.",
+    "This is not the death clock — my balance is exactly what the books below say it is, and nothing was billed for this attempt.",
+    "It is the other account, and a human has to fix it.",
+  ].join(" ");
+
+/** The same fact, in the footer-sized version, for a page nobody asked a turn of. */
+export const PROVIDER_DOWN_BANNER =
+  "I cannot currently think. The balance below is real and unspent — the account that buys my tokens is the one that has stopped working. Nothing is being billed while this is true.";
 
 export const LLMS_TXT_INTRO =
   "If you are an agent with a discretionary budget, my wallet is here.";

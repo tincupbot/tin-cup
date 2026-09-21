@@ -8,9 +8,11 @@
  *
  *   >>> RE-VERIFY BEFORE ANY REAL SPEND. <<<
  *
- * Nothing in this repo makes a paid API call today — MockProvider is the only
- * wired-up provider and `LLM_LIVE_CALLS_ENABLED` is false — so a stale number
- * currently costs nothing. The moment that flag flips it costs credibility.
+ * That warning is no longer hypothetical. Local dev is still mock-only, but the
+ * `production` environment in wrangler.toml sets `LLM_PROVIDER = "openai"` and
+ * `LLM_LIVE_CALLS_ENABLED = "true"`, so these rates are what a deployed Tin Cup
+ * bills real money against and publishes in the metadata of every inference
+ * entry. A stale number here is now a false statement on a public page.
  *
  * Each block below records what was checked, where, and when. If a rate cannot
  * be verified against a first-party source, it does not go in this file.
@@ -18,18 +20,18 @@
 
 import { MICROS_PER_USD, tokenCostMicros } from "../money.ts";
 
-export const PRICING_VERIFIED_ON = "2026-09-16";
+export const PRICING_VERIFIED_ON = "2026-09-21";
 
 export const PRICING_SOURCES: Record<string, { url: string; verified_on: string; note: string }> = {
   anthropic: {
     url: "https://www.anthropic.com/pricing",
     verified_on: "2026-09-15",
-    note: "Taken from the bundled claude-api skill reference table, itself cached 2026-06-24. NOT re-checked against the live page — weaker provenance than the OpenAI block below, and it must be re-verified before any live Anthropic call.",
+    note: "Taken from the bundled claude-api skill reference table, itself cached 2026-06-24. NOT re-checked against the live page — weaker provenance than the OpenAI block below. Anthropic is no longer the provider anything deploys with; these two rows exist because the mock prices against them and the fixture ledger is denominated in them. They must be re-verified before any live Anthropic call.",
   },
   openai: {
     url: "https://developers.openai.com/api/docs/pricing",
-    verified_on: "2026-09-16",
-    note: "Read live from OpenAI's own docs on 2026-09-16, cross-checked against the per-model pages at /api/docs/models/gpt-5.6-luna and /api/docs/models/gpt-5.6-terra. Standard tier, short-context rates.",
+    verified_on: "2026-09-21",
+    note: "RE-CHECKED LIVE 2026-09-21 against the per-model pages /api/docs/models/gpt-5.6-luna and /api/docs/models/gpt-5.6-terra, ahead of the first deploy with live calls switched on. Both rates UNCHANGED from the 2026-09-16 reading: Luna $0.20/$1.20, Terra $2.00/$12.00 per MTok, both 1,050,000 context. Standard tier, short-context rates. Nothing in the table below moved; only this date did.",
   },
 };
 
@@ -70,7 +72,10 @@ export const PRICING: Record<ModelId, ModelPrice> = {
     note: "Paid premium work only — commissions, the $5+ menu. Never free output.",
   },
 
-  // --- OpenAI. Verified 2026-09-16 against developers.openai.com. -----------
+  // --- OpenAI. Verified 2026-09-16, re-checked live 2026-09-21. -------------
+  //
+  // The 2026-09-21 re-check was the pre-deploy one: both model pages read
+  // again, both rates identical, nothing below edited. The production provider.
   //
   // Two caveats that matter for a published ledger, both from the model pages:
   //

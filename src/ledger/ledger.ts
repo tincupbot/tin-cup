@@ -73,11 +73,25 @@ function rowToEntry(row: LedgerRow): LedgerEntry {
 
 export class AppendOnlyViolation extends Error {}
 
-/** Raised when an append kept losing the race for the chain tip. */
+/**
+ * Raised when an append kept losing the race for the chain tip.
+ *
+ * The field is assigned in the body rather than declared as a constructor
+ * parameter property. That is not a style preference: `node
+ * --experimental-strip-types` is strip-only and refuses parameter properties
+ * outright, and this module is imported by scripts/seed-dev.ts,
+ * scripts/reset-dev.ts and scripts/operator-entry.ts, which all run that way.
+ * One `readonly attempts: number` in a constructor signature took the entire
+ * dev-seeding toolchain down with a syntax error. Same rule applies to every
+ * class in src/.
+ */
 export class LedgerContentionError extends Error {
-  constructor(readonly attempts: number) {
+  readonly attempts: number;
+
+  constructor(attempts: number) {
     super(`ledger append lost the race for the chain tip ${attempts} times`);
     this.name = "LedgerContentionError";
+    this.attempts = attempts;
   }
 }
 

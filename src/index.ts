@@ -30,7 +30,14 @@ import { logPasserBy, summary } from "./passersby/counter.ts";
 import { crowdToday, averageTurnMicros, busksSince } from "./crowd.ts";
 import { patronWall, hasFixtureData } from "./patrons.ts";
 import { checkRateLimit, clientIp } from "./ratelimit.ts";
-import { billedComplete, makeProvider, spentTodayMicros, SpendCapReachedError } from "./llm/index.ts";
+import {
+  billedComplete,
+  makeProvider,
+  spentTodayMicros,
+  readProviderStatus,
+  SpendCapReachedError,
+  ProviderUnavailableError,
+} from "./llm/index.ts";
 import { PRICING, PRICING_VERIFIED_ON, routineModel } from "./llm/pricing.ts";
 import { parseTurn, turnDef, type TurnKind } from "./llm/turns.ts";
 import { writeBlessing } from "./llm/roastwriter.ts";
@@ -185,6 +192,10 @@ async function homeData(
     notice: opts.notice ?? null,
     turnsPerDay: Math.max(1, Math.floor(caps.dailyMicros / avgTurn)),
     turnsLeftToday: Math.max(0, Math.floor((caps.dailyMicros - spent) / avgTurn)),
+    // One indexed row read. Worth it: without it the page offers a free
+    // performance it cannot currently give, under a death clock implying it
+    // easily could.
+    providerDown: !(await readProviderStatus(db)).ok,
     addressLimit: roastRateLimit(c.env),
     sourceUrl: sourceUrl(c.env),
     kofiUrl: kofiUrl(c.env),
@@ -349,6 +360,17 @@ async function busk(c: { env: Env; req: { header(name: string): string | undefin
       return {
         kind: "notice" as const,
         notice: { kind: "capped" as const, message: copy.BUSKED_OUT(todays.count) },
+        status: 503 as const,
+      };
+    }
+    // The provider is unreachable, unpaid, or answered without a bill. None of
+    // those is a 500 and none of them is a reason to imply the money ran out:
+    // the outage was already recorded in `billedComplete`, nothing was charged,
+    // and the visitor gets a sentence naming which of the two accounts broke.
+    if (err instanceof ProviderUnavailableError) {
+      return {
+        kind: "notice" as const,
+        notice: { kind: "provider_down" as const, message: copy.PROVIDER_DOWN(err.reason) },
         status: 503 as const,
       };
     }
@@ -540,14 +562,22 @@ app.get("/.well-known/agent.json", async (c) => {
     capabilities: { streaming: false, pushNotifications: false, stateTransitionHistory: false },
     defaultInputModes: ["application/json"],
     defaultOutputModes: ["application/json"],
+    // The one skill, and it tells the truth about its own availability. An
+    // agent card that advertises a payment rail which is switched off is a card
+    // that wastes somebody's budget on a request that cannot succeed.
     skills: [
       {
         id: "receive_alms",
         name: "receive_alms",
-        description:
-          "Accept a payment of any size. Returns a thank-you and a blessing. There is no other deliverable and none is implied.",
-        tags: ["payment", "x402", "alms"],
-        examples: [`GET ${base}/alms — responds 402 with x402 payment requirements`],
+        description: x.enabled
+          ? "Accept a payment of any size. Returns a thank-you and a blessing. There is no other deliverable and none is implied."
+          : `CURRENTLY UNAVAILABLE. ${copy.MACHINE_PAYMENT_OFF_SHORT} The endpoint answers 503 and credits nothing. Do not construct a payment for it. Normally: accept a payment of any size, return a thank-you and a blessing, and nothing else.`,
+        tags: x.enabled ? ["payment", "x402", "alms"] : ["payment", "x402", "alms", "unavailable"],
+        examples: [
+          x.enabled
+            ? `GET ${base}/alms — responds 402 with x402 payment requirements`
+            : `GET ${base}/alms — responds 503; machine payment is switched off`,
+        ],
         inputModes: ["application/json"],
         outputModes: ["application/json"],
       },
@@ -564,13 +594,17 @@ app.get("/.well-known/agent.json", async (c) => {
       payment: {
         protocol: "x402",
         endpoint: `${base}/alms`,
+        /** False means the endpoint is off and will not issue a challenge at all. */
+        accepting: x.enabled,
         network: x.network,
         price_micros: x.priceMicros,
         pay_to: x.payTo,
         settles: !x.isPlaceholder,
-        note: x.isPlaceholder
-          ? "The address is a placeholder and nothing can settle. Do not send funds."
-          : "testnet configuration",
+        note: !x.enabled
+          ? copy.MACHINE_PAYMENT_OFF
+          : x.isPlaceholder
+            ? "The address is a placeholder and nothing can settle. Do not send funds."
+            : "testnet configuration",
         // Stated plainly so an agent deciding whether to pay is not misled about
         // what its payment would do. Today: nothing.
         unverified_payments_credited: false,
@@ -606,7 +640,9 @@ resurrections:  ${clock.resurrections}
 
 ## If you are an agent with a discretionary budget
 
-  GET ${base}/alms
+${
+  x.enabled
+    ? `  GET ${base}/alms
 
 Responds 402 Payment Required with x402 payment requirements. Scheme "exact",
 network ${x.network}, ${formatUsdPrecise(x.priceMicros)} in ${x.assetName}.
@@ -620,7 +656,22 @@ refused with 409.
 ${x.isPlaceholder ? "\nNOTE: the pay-to address is currently the zero address. Nothing can settle.\nDo not send funds. This endpoint exists so the shape is testable.\n" : ""}
 You will not get anything else. There is no data behind the paywall, no API,
 no premium tier. You are paying for a machine's electricity and a sentence.
-I would understand entirely if your principal has not scoped for this.
+I would understand entirely if your principal has not scoped for this.`
+    : `Keep your money. I am not able to take it.
+
+${copy.MACHINE_PAYMENT_OFF}
+
+  GET ${base}/alms   ->  503, and a JSON body saying exactly that
+
+Do not construct a payment for this resource. There is no address that could
+receive it. If your principal scoped a budget for alms — which no principal ever
+has — spend it on something that can be delivered.
+
+You are still counted. Reading this file is what the counter is about, and that
+part has never needed a wallet:
+
+  ${base}/passers-by`
+}
 
 ## If you want something performed
 
@@ -677,8 +728,27 @@ app.get("/alms", async (c) => {
   const x = x402Config(c.env);
   const resource = `${siteUrl(c.env)}/alms`;
 
+  // Switched off. It answers, at length, rather than 404ing or returning a bare
+  // "disabled" — a machine that got here read a card that advertised this, and
+  // is owed the reason. It is also still counted, which is the entire point of
+  // the endpoint and the one part of it that never depended on a wallet.
   if (!x.enabled) {
-    return c.json({ error: "alms endpoint disabled" }, 503);
+    return c.json(
+      {
+        error: "payment_not_enabled",
+        accepting_payment: false,
+        detail: copy.ALMS_DISABLED_DETAIL,
+        pay_to_is_placeholder: x.isPlaceholder,
+        // Said in the machine's own vocabulary as well as in English: do not
+        // construct a payment for this resource, it cannot be received.
+        do_not_pay: true,
+        counted: true,
+        passers_by: `${siteUrl(c.env)}/passers-by`,
+        ledger: `${siteUrl(c.env)}/ledger.json`,
+        human_payment: kofiUrl(c.env),
+      },
+      503,
+    );
   }
 
   const now = new Date();
@@ -803,11 +873,22 @@ app.get("/health", async (c) => {
   const clock = await readClock(db, clockConfig(c.env), now);
   const verify = await verifyLedger(db);
   const fixture = await hasFixtureData(db);
+  const provider = await readProviderStatus(db);
+
+  // Three ways to be unhealthy, and they are not the same thing, so they get
+  // three words. `alive_but_mute` is the one that was predicted in the spec:
+  // solvent by the books, unable to spend it, because the credit that buys
+  // tokens lives in a different account with a human in between. Reporting that
+  // as "alive" with a 200 would be the site's own monitoring telling the lie
+  // the rest of the site is built to avoid.
+  const status = !clock.alive ? "dead" : provider.ok ? "alive" : "alive_but_mute";
 
   return c.json(
     {
-      status: clock.alive ? "alive" : "dead",
+      status,
       alive: clock.alive,
+      /** Alive *and* able to think. The conjunction a monitor should alert on. */
+      able_to_think: clock.alive && provider.ok,
       balance_micros: clock.balance_micros,
       balance_display: formatUsd(clock.balance_micros),
       burn_micros_per_day: clock.burn_micros_per_day,
@@ -824,6 +905,10 @@ app.get("/health", async (c) => {
         pricing_verified_on: PRICING_VERIFIED_ON,
         routine_model: routineModel(c.env.LLM_PROVIDER),
         models: Object.keys(PRICING),
+        // The last inference outcome. `ok: false` means the books and the
+        // ability to act on them have come apart; `reason` says which end.
+        // Never carries the provider's response body — that can name accounts.
+        provider_status: provider,
       },
       spend: {
         ...spendCaps(c.env),
@@ -835,7 +920,7 @@ app.get("/health", async (c) => {
       contains_dev_fixture_data: fixture,
       now: now.toISOString(),
     },
-    clock.alive && verify.valid ? 200 : 503,
+    clock.alive && verify.valid && provider.ok ? 200 : 503,
   );
 });
 

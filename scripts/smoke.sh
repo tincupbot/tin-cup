@@ -59,6 +59,10 @@ check_body "/alms" '"scheme": *"exact"' "402 offers the exact scheme"
 echo
 echo "Money is not real"
 check_body "/health" '"live_calls_enabled": *false' "live LLM calls are off"
+# Solvent and able to spend it are two different claims. This one is the
+# conjunction: a deployment whose OpenAI account has gone dry answers false
+# here and 503 on the endpoint, rather than reporting cheerful good health.
+check_body "/health" '"able_to_think": *true' "health distinguishes solvent from able to think"
 if curl -s "$BASE/health" | grep -q '"isPlaceholder": *true'; then
   ok "wallet is flagged as a placeholder"
 else

@@ -7,7 +7,7 @@ import { summary, dayKey, prunePassersby } from "./passersby/counter.ts";
 import { busksSince } from "./crowd.ts";
 import { rebuildLedgerState } from "./ledger/state.ts";
 import { pruneRateLimits } from "./ratelimit.ts";
-import { billedComplete, makeProvider, SpendCapReachedError } from "./llm/index.ts";
+import { billedComplete, makeProvider, SpendCapReachedError, ProviderUnavailableError } from "./llm/index.ts";
 import { routineModel } from "./llm/pricing.ts";
 import { AgentIsDeadError } from "./deathclock.ts";
 import * as copy from "./copy.ts";
@@ -106,6 +106,14 @@ export async function runAgentLoop(db: Db, env: Env, now: Date = new Date()): Pr
         // midnight UTC and the work is still wanted; it just isn't affordable
         // right now. The daily post below costs nothing, so it still goes out.
         result.skipped_reason = "daily spend cap reached — remaining performances left queued";
+        break;
+      }
+      if (err instanceof ProviderUnavailableError) {
+        // Our plumbing, not this request. Marking the performance `failed`
+        // would blame a visitor's subject for an empty API account and lose the
+        // work permanently — there is no requeue path. Leave everything queued
+        // and stop trying; the next run will find the same queue.
+        result.skipped_reason = `provider unavailable (${err.reason}) — performances left queued, nothing billed`;
         break;
       }
       await db.prepare(`UPDATE performances SET status = 'failed' WHERE id = ?`).bind(p.id).run();

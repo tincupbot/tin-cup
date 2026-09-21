@@ -140,18 +140,79 @@ const viewTs = srcTs.filter((f) => f.includes("/views/"));
   }
 }
 
-// --- 6. Live LLM calls stay off in committed config. ------------------------
+// --- 6. Local dev spends nothing; production spends only what was approved. --
+//
+// This rule used to read wrangler.toml as one blob: no "true" anywhere, mock
+// somewhere. That stopped working the moment a `[env.production]` block existed
+// with live calls switched on, and the lazy fix — deleting the rule — would
+// have removed the only thing standing between a typo and a local dev server
+// billing a real card. So it is per-section now.
+//
+// The distinction it protects: `wrangler dev`, the tests and anything a
+// contributor runs read [vars] and must stay free. Only the environment nobody
+// enters by accident is allowed to cost money.
 {
-  const toml = read(join(ROOT, "wrangler.toml"));
-  if (/LLM_LIVE_CALLS_ENABLED\s*=\s*"true"/.test(toml)) {
-    fail(join(ROOT, "wrangler.toml"), "no-spend", "LLM_LIVE_CALLS_ENABLED is true in committed config");
-  }
-  if (!/LLM_PROVIDER\s*=\s*"mock"/.test(toml)) {
-    fail(join(ROOT, "wrangler.toml"), "no-spend", "LLM_PROVIDER is not mock in committed config");
-  }
+  const TOML = join(ROOT, "wrangler.toml");
+  const toml = read(TOML);
   const zero = "0x0000000000000000000000000000000000000000";
-  if (!toml.includes(zero)) {
-    fail(join(ROOT, "wrangler.toml"), "no-wallet", "X402_PAY_TO is no longer the zero address");
+
+  /** The body of one TOML table: everything up to the next `[` at line start. */
+  const section = (header: string): string | null => {
+    const lines = toml.split("\n");
+    const start = lines.findIndex((l) => l.trim() === header);
+    if (start === -1) return null;
+    const rest = lines.slice(start + 1);
+    const end = rest.findIndex((l) => /^\s*\[/.test(l));
+    return (end === -1 ? rest : rest.slice(0, end)).join("\n");
+  };
+  const has = (body: string, key: string, value: string) =>
+    new RegExp(`^\\s*${key}\\s*=\\s*"${value}"`, "m").test(body);
+
+  const local = section("[vars]");
+  const prod = section("[env.production.vars]");
+
+  if (local === null) fail(TOML, "no-spend", "the [vars] block is gone");
+  else {
+    if (has(local, "LLM_LIVE_CALLS_ENABLED", "true")) {
+      fail(TOML, "no-spend", "LLM_LIVE_CALLS_ENABLED is true in [vars] — local dev would bill a real key");
+    }
+    if (!has(local, "LLM_PROVIDER", "mock")) {
+      fail(TOML, "no-spend", "LLM_PROVIDER in [vars] is not mock");
+    }
+    if (!local.includes(zero)) {
+      fail(TOML, "no-wallet", "X402_PAY_TO in [vars] is no longer the zero address");
+    }
+  }
+
+  if (prod === null) fail(TOML, "prod-config", "there is no [env.production.vars] block");
+  else {
+    // No wallet exists, so production must not advertise a payable endpoint.
+    // Together these two say: either there is a real address, or the endpoint
+    // is off. What is forbidden is a live challenge naming 0x0, which asks
+    // strangers' agents to burn money.
+    const payToIsZero = !/^\s*X402_PAY_TO\s*=/m.test(prod) || prod.includes(zero);
+    if (payToIsZero && !has(prod, "X402_ENABLED", "false")) {
+      fail(TOML, "no-wallet", "production has x402 enabled while X402_PAY_TO is the zero address");
+    }
+    if (!payToIsZero) {
+      fail(TOML, "no-wallet", "production sets a non-zero X402_PAY_TO — a real wallet is a Ben decision");
+    }
+    // A contact that bounces is worse than none: it looks like a way to reach
+    // a human and is not.
+    if (/example\.invalid/.test(prod)) {
+      fail(TOML, "prod-config", "production OPERATOR_CONTACT is still a placeholder address");
+    }
+    if (!/^\s*SITE_URL\s*=/m.test(prod)) {
+      fail(TOML, "prod-config", "production has no SITE_URL — the x402 resource and every agent-facing URL come from it");
+    }
+    // Non-inheritable keys: a var missing here is not inherited from [vars],
+    // it is simply absent, and src/env.ts quietly substitutes a default. The
+    // expensive ones are the spend caps.
+    for (const key of ["DAILY_SPEND_CAP_MICROS", "MAX_CALL_COST_MICROS", "KOFI_HANDLE", "LLM_PROVIDER"]) {
+      if (!new RegExp(`^\\s*${key}\\s*=`, "m").test(prod)) {
+        fail(TOML, "prod-config", `production is missing ${key}; vars are not inherited from [vars]`);
+      }
+    }
   }
 }
 

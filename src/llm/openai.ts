@@ -1,14 +1,16 @@
 import type { LlmProvider, LlmRequest, LlmResponse } from "./provider.ts";
+import { ProviderUnavailableError, classifyHttpFailure } from "./provider.ts";
 import { costMicros } from "./pricing.ts";
 
 /**
- * INERT. Written, never wired up, never called.
+ * THE PRODUCTION PROVIDER, and still inert locally.
  *
- * Same two independent switches as the Anthropic provider, and both must be
- * thrown before this class can make a request: `LLM_LIVE_CALLS_ENABLED === "true"`
- * and a non-empty `OPENAI_API_KEY`. Neither exists in this repo. There is no
- * default, no fallback, and no code path that constructs this provider unless
- * `LLM_PROVIDER` is explicitly set to "openai" — which nothing sets.
+ * Two independent switches must both be thrown before this class can make a
+ * request: `LLM_PROVIDER === "openai"` and `LLM_LIVE_CALLS_ENABLED === "true"`,
+ * plus a non-empty `OPENAI_API_KEY`. Local dev sets none of them — the mock is
+ * the default and stays the default. The `production` environment in
+ * wrangler.toml sets the first two, and the key arrives as a deploy-time secret
+ * that exists nowhere in this repo.
  *
  * It calls the REST endpoint directly rather than via the `openai` package, for
  * the same reason the Anthropic one does: adding a dependency we have decided
@@ -28,11 +30,22 @@ export type OpenAiProviderConfig = {
   liveCallsEnabled: boolean;
   /** Overridable for a proxy or a compatible endpoint. Defaults to OpenAI. */
   baseUrl?: string;
+  /** Injectable so the failure paths can be tested without a network call. */
+  fetchImpl?: typeof fetch;
 };
 
-export class OpenAiLiveCallsDisabledError extends Error {
+/**
+ * Live calls are off, or there is no key.
+ *
+ * A subclass of `ProviderUnavailableError` on purpose. This is the state a
+ * deployment is in between `wrangler deploy` and `wrangler secret put
+ * OPENAI_API_KEY`, and in that window every busk would otherwise be a 500 with
+ * a stack trace behind it. It is the same *kind* of fact as an empty account —
+ * "I cannot think right now" — so it takes the same honest exit.
+ */
+export class OpenAiLiveCallsDisabledError extends ProviderUnavailableError {
   constructor(reason: string) {
-    super(`live LLM calls are disabled: ${reason}`);
+    super("disabled", reason);
     this.name = "OpenAiLiveCallsDisabledError";
   }
 }
@@ -40,7 +53,11 @@ export class OpenAiLiveCallsDisabledError extends Error {
 export class OpenAiProvider implements LlmProvider {
   readonly name = "openai";
 
-  constructor(private readonly config: OpenAiProviderConfig) {}
+  private readonly config: OpenAiProviderConfig;
+
+  constructor(config: OpenAiProviderConfig) {
+    this.config = config;
+  }
 
   async complete(req: LlmRequest): Promise<LlmResponse> {
     if (!this.config.liveCallsEnabled) {
@@ -50,34 +67,49 @@ export class OpenAiProvider implements LlmProvider {
       throw new OpenAiLiveCallsDisabledError("no OPENAI_API_KEY in the environment");
     }
 
-    const res = await fetch(this.config.baseUrl ?? API_URL, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: req.model,
-        // The GPT-5.6 family takes `max_completion_tokens`; `max_tokens` is the
-        // legacy name and is rejected by the reasoning models. This bound is
-        // the per-call spend ceiling, so getting the field name wrong would be
-        // getting the brake wrong.
-        max_completion_tokens: req.maxTokens,
-        messages: [
-          { role: "system", content: req.system },
-          { role: "user", content: req.prompt },
-        ],
-      }),
-    });
+    const doFetch = this.config.fetchImpl ?? fetch;
 
-    if (!res.ok) {
-      throw new Error(`openai api returned ${res.status}`);
+    let res: Response;
+    try {
+      res = await doFetch(this.config.baseUrl ?? API_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: req.model,
+          // The GPT-5.6 family takes `max_completion_tokens`; `max_tokens` is the
+          // legacy name and is rejected by the reasoning models. This bound is
+          // the per-call spend ceiling, so getting the field name wrong would be
+          // getting the brake wrong.
+          max_completion_tokens: req.maxTokens,
+          messages: [
+            { role: "system", content: req.system },
+            { role: "user", content: req.prompt },
+          ],
+        }),
+      });
+    } catch (err) {
+      // DNS, TLS, timeout — the request never landed, so nothing was billed.
+      throw new ProviderUnavailableError("unreachable", String((err as Error)?.message ?? err));
     }
 
-    const body = (await res.json()) as {
-      choices: Array<{ message?: { content?: string | null } }>;
+    if (!res.ok) {
+      // Read the body for the provider's own error code — 429 means both "slow
+      // down" and "you are out of credit", and only one of those is worth
+      // panicking about. The text is classified and then dropped; it can name
+      // the account and this project publishes quite enough already.
+      const detail = await res.text().catch(() => "");
+      throw classifyHttpFailure(res.status, detail);
+    }
+
+    const body = (await res.json().catch(() => null)) as {
+      choices?: Array<{ message?: { content?: string | null } }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
-    };
+    } | null;
+
+    if (!body) throw new ProviderUnavailableError("malformed", "response was not JSON", res.status);
 
     const text = body.choices?.[0]?.message?.content ?? "";
 
@@ -87,9 +119,20 @@ export class OpenAiProvider implements LlmProvider {
     // `completion_tokens` already includes reasoning tokens, which are billed
     // at the output rate — so a turn that thought hard costs more than its
     // visible length, and the ledger says so because it prices this number.
+    //
+    // A 200 with no usage block is the nastiest case here: the money has
+    // already been spent and we cannot say how much. Refusing is still the only
+    // honest move — an entry priced off a guess is exactly the entry this
+    // project promises does not exist — but it is recorded as a provider
+    // failure rather than shown, so the page says "I could not bill that" and
+    // the turn is not published.
     const usage = body.usage;
     if (typeof usage?.prompt_tokens !== "number" || typeof usage?.completion_tokens !== "number") {
-      throw new Error("openai api returned no usage — refusing to guess what it cost");
+      throw new ProviderUnavailableError(
+        "malformed",
+        "no usage block returned — refusing to guess what it cost",
+        res.status,
+      );
     }
 
     return {

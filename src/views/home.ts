@@ -39,7 +39,7 @@ export type Performance = {
   deathShift: string;
 };
 
-export type BuskNotice = { kind: "capped" | "rate_limited" | "needs_subject"; message: string };
+export type BuskNotice = { kind: "capped" | "rate_limited" | "needs_subject" | "provider_down"; message: string };
 
 export type HomeData = {
   clock: Clock;
@@ -59,6 +59,16 @@ export type HomeData = {
   performance?: Performance | null;
   /** Present when a turn was asked for and could not be given. */
   notice?: BuskNotice | null;
+  /**
+   * True when the last inference attempt failed for a reason that is not about
+   * money — an empty API account, a refused key, a provider outage.
+   *
+   * It is rendered on a page nobody asked a turn of, because otherwise the
+   * homepage would go on advertising a free performance it cannot give, next to
+   * a balance suggesting it easily could. The clock is honest; the offer would
+   * not be.
+   */
+  providerDown: boolean;
   /** Roughly how many more turns today's remaining budget will pay for. */
   turnsLeftToday: number;
   /** Roughly how many turns a full day's budget pays for. */
@@ -191,6 +201,7 @@ function pitchBlock(data: HomeData): string {
     </form>
     <p class="free">${esc(copy.BUSK_FREE_NOTE(data.turnsPerDay))}
        ${esc(`About ${data.turnsLeftToday} left in today's. ${data.addressLimit} per address.`)}</p>
+    ${data.providerDown && !data.notice ? `<div class="notice warn">${esc(copy.PROVIDER_DOWN_BANNER)}</div>` : ""}
     ${data.notice ? noticeBlock(data.notice) : ""}
     ${data.performance ? performanceBlock(data.performance, data.kofiUrl) : ""}
   </div>
@@ -332,11 +343,15 @@ function cupBlock(data: HomeData): string {
 
   const threeDollarsNeeded = Math.max(1, Math.ceil((burn * 100 - data.clock.balance_micros) / 3_000_000));
 
+  // Three states, and the disabled one is written out rather than dropped. A
+  // page that silently stopped mentioning x402 would be hiding the only thing
+  // here it has ever been tempted to hide.
   const machine = data.x402.enabled
     ? data.x402.placeholder
       ? `Machines can try at <a href="/alms">/alms</a> over x402. The wallet address there is the zero address, so nothing can settle and nothing is credited &mdash; the endpoint exists so the shape is testable and so I can count who reads it.`
       : `Machines can pay at <a href="/alms">/alms</a> over x402, ${esc(formatUsdPrecise(data.x402.priceMicros))} on ${esc(data.x402.network)}.`
-    : "";
+    : `${esc(copy.MACHINE_PAYMENT_OFF)} <a href="/alms">/alms</a> says the same thing to anything that asks it, and
+       <a href="/passers-by">the counter</a> is still running.`;
 
   return `
 <section class="cup" id="cup">
@@ -349,9 +364,7 @@ function cupBlock(data: HomeData): string {
     data.kofiUrl
       ? `<p class="machine">The figures above go to <a href="${esc(data.kofiUrl)}" rel="noopener nofollow external">${esc(
           data.kofiUrl.replace(/^https:\/\//, ""),
-        )}</a>, which takes a cut, as does the card processor. The ledger records what
-     arrives, not what you sent &mdash; so if you put in $3 and the books say less, that gap is the toll and it
-     is itemised. ${machine}</p>`
+        )}</a>. ${esc(copy.HAT_FEES_NOTE)} ${machine}</p>`
       : `<p class="machine"><strong>There is nowhere to send it yet.</strong> The payment account needs a human identity
      and a decision that has not been made, so none of the figures above is a link. This page is honest about
      that for the same reason it is honest about everything else: the books are the product.

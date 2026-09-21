@@ -53,8 +53,12 @@ describe("the standing hat", () => {
 
     expect(html).toContain('href="https://ko-fi.com/tincupbot"');
     expect(html).not.toContain("There is nowhere to send it yet");
-    // The toll is disclosed rather than glossed: the books show what arrived.
-    expect(html).toContain("records what");
+    // The toll is disclosed rather than glossed. It used to claim the ledger
+    // "records what arrives, not what you sent" and that the gap was itemised;
+    // neither was true, because the Ko-fi webhook reports only the gross and
+    // there was no fee entry anywhere. The honest version says gross now,
+    // itemised correction later. See test/production.test.ts for the rest.
+    expect(html).toContain("reports only the gross");
   });
 
   it("says so plainly when there is nowhere to send money", async () => {

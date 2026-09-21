@@ -3,8 +3,23 @@ main = "src/index.ts"
 compatibility_date = "2026-09-01"
 compatibility_flags = ["nodejs_compat"]
 
-# LOCAL ONLY. This project has never been deployed and must not be.
-# `wrangler deploy` requires a Cloudflare account and Ben's approval.
+# TWO CONFIGURATIONS, AND THE DIFFERENCE BETWEEN THEM IS THE POINT.
+#
+# Everything at the top level is LOCAL DEV: mock provider, no live calls, no
+# real money, x402 on so its shape stays exercised. Running `wrangler dev` or
+# the tests touches nothing that costs anything, and `npm run guard` fails the
+# build if that stops being true.
+#
+# `[env.production]` at the bottom is the deployed configuration. Deploying is
+# now approved (Ben, 2026-09-21) and is done explicitly:
+#
+#   wrangler deploy --env production
+#
+# There is deliberately no npm script for it. `npm run guard` refuses to let one
+# exist, so a deploy is always a thing a human typed on purpose. DEPLOY.md is
+# the ordered runbook and the secrets are set out of band with `wrangler secret
+# put`; none of them are in this file and none of them can be.
+#
 # The database_id below is a placeholder; local D1 ignores it entirely.
 [[d1_databases]]
 binding = "DB"
@@ -23,7 +38,7 @@ crons = ["0 9 * * *"]
 
 [vars]
 # --- Public config. No secrets here. Secrets come from .dev.vars (gitignored)
-# --- in local dev, and from `wrangler secret put` if this is ever deployed.
+# --- in local dev, and from `wrangler secret put --env production` when deployed.
 
 SITE_NAME = "Tin Cup"
 # Must match the port `npm run dev` serves on: this string is the `resource` in
@@ -49,7 +64,7 @@ PASSERSBY_SAMPLE_ONE_IN = "10"
 
 # ADMIN_TOKEN is deliberately NOT here. It gates /__scheduled (which spends
 # money) and /outbox (unsent drafts), so it is a secret: put it in .dev.vars
-# locally, or `wrangler secret put ADMIN_TOKEN` if this is ever deployed.
+# locally, or `wrangler secret put ADMIN_TOKEN --env production` when deployed.
 # Unset means those two endpoints return 404 and cannot be run at all.
 
 # Death clock
@@ -78,6 +93,137 @@ X402_ASSET = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"            # USDC on b
 X402_ASSET_NAME = "USDC"
 X402_ASSET_DECIMALS = "6"
 
-# LLM provider. "mock" is the only wired-up option. See src/llm/README note.
+# LLM provider. Local dev is mock and stays mock — `npm run guard` enforces it
+# against this block specifically. Production sets "openai" below.
 LLM_PROVIDER = "mock"
-LLM_LIVE_CALLS_ENABLED = "false"   # must be "true" AND ANTHROPIC_API_KEY set for real calls
+LLM_LIVE_CALLS_ENABLED = "false"   # must be "true" AND a provider key set for real calls
+
+# ===========================================================================
+# PRODUCTION
+# ===========================================================================
+#
+# READ THIS BEFORE EDITING ANYTHING BELOW.
+#
+# `vars` and bindings are NON-INHERITABLE in Wrangler: a named environment does
+# not inherit the top-level [vars] table, it replaces it. Every variable the
+# Worker needs has to be repeated here in full. A var that is merely absent
+# silently falls back to whatever src/env.ts defaults to — which for
+# KOFI_HANDLE would mean the deployed site quietly telling every visitor there
+# is nowhere to send money. So this block is a complete set, not a diff, and it
+# should stay that way even where a value is identical to local.
+#
+# The same rule is why the D1 binding is declared again below. Without it the
+# deployed Worker has no `DB` at all.
+#
+# `triggers` IS inheritable, so the daily cron carries over unchanged.
+
+[env.production]
+# Without this, a named environment deploys as "<name>-<env>" — i.e. the Worker
+# would be `tin-cup-production` and the hostname `tin-cup-production.<sub>.workers.dev`,
+# which would make the SITE_URL below wrong on the first request. Pinning the
+# name keeps the deployed Worker `tin-cup`.
+name = "tin-cup"
+# The hat is a link on a page; there is no scheduled-only mode here.
+workers_dev = true
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "tincup"
+# PLACEHOLDER. Filled in by hand after `wrangler d1 create tincup`, which prints
+# the real uuid. The deploy will succeed against this zero uuid and then fail on
+# every request, so this is step two of DEPLOY.md and not an optional one.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[env.production.vars]
+
+SITE_NAME = "Tin Cup"
+
+# >>> WRONG UNTIL CORRECTED. FIRST JOB AFTER THE FIRST DEPLOY. <<<
+#
+# `wrangler deploy` prints the real hostname. Put it here, verbatim, and deploy
+# again — it is a two-deploy dance and that is expected, because the hostname
+# does not exist until the first one finishes.
+#
+# This is not cosmetic. This string is:
+#   - the `resource` field in the x402 challenge (a payment scoped to the wrong
+#     resource is not a payment for this endpoint),
+#   - every absolute URL in llms.txt and /.well-known/agent.json, which is how
+#     an agent finds the ledger and the counter,
+#   - the sitemap and robots.txt Sitemap: line.
+# Left as the placeholder, the site would spend its launch telling every crawler
+# and every agent to go to a hostname that does not resolve.
+SITE_URL = "https://tin-cup.<subdomain>.workers.dev"
+
+SOURCE_URL = "https://github.com/tincupbot/tin-cup"
+
+# The hat's destination. Ben created this page; it still needs its currency set
+# to USD (src/kofi.ts rejects anything else) and a payment provider connected.
+KOFI_HANDLE = "tincupbot"
+
+# There is no email address for this project and creating one is a Ben decision
+# that has not been made. Rather than print a placeholder that bounces — which
+# is worse than no address, because it looks like a way to get in touch and is
+# not — contact goes to the public issue tracker of the repo the site already
+# links to. It is a real, monitored, public place to say something.
+OPERATOR_CONTACT = "https://github.com/tincupbot/tin-cup/issues"
+CONTACT_NOTE = "Operated by a human in Berlin. There is no contact address yet; the repo's issue tracker is the way to reach the operator, and it is public."
+
+HOME_CACHE_SECONDS = "15"
+PASSERSBY_SAMPLE_ONE_IN = "10"
+
+BURN_FLOOR_MICROS = "250000"
+BURN_WINDOW_DAYS = "7"
+
+ROAST_RATE_LIMIT = "5"
+
+# The real brake, and in production it is spending Ben's OpenAI credit rather
+# than an imaginary balance. $0.50/day across every caller combined, $0.025 on
+# any single call. Both are enforced before the provider is called.
+DAILY_SPEND_CAP_MICROS = "500000"
+MAX_CALL_COST_MICROS = "25000"
+
+# --- x402: OFF IN PRODUCTION. ---------------------------------------------
+#
+# Decision taken 2026-09-21, and it is a money-safety decision rather than a
+# scope one. X402_PAY_TO is the zero address: there is no wallet, because a
+# wallet means an exchange account with KYC under somebody's name and that has
+# not been decided. An agent that paid the challenge would be sending USDC to
+# 0x0 — burning its principal's money — and receiving a blessing for it.
+#
+# So the endpoint is switched off rather than left open. Every line of x402 code
+# and every one of its tests stays exactly where it is; this is a config flag,
+# not a removal, and flipping it back is one line plus a real address.
+#
+# What "off" must never mean is "quietly gone". /alms answers 503 with the
+# reason in full, the agent card marks the skill unavailable, llms.txt says
+# keep your money, and the homepage says machine payment is not wired up. The
+# passers-by counter is unaffected — it never needed a wallet, and counting the
+# machines that read the card is the half of this that was always the good bit.
+X402_ENABLED = "false"
+X402_NETWORK = "base-sepolia"
+X402_PRICE_MICROS = "10000"
+X402_PAY_TO = "0x0000000000000000000000000000000000000000"           # no wallet exists
+X402_ASSET = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+X402_ASSET_NAME = "USDC"
+X402_ASSET_DECIMALS = "6"
+
+# --- Live inference. -------------------------------------------------------
+#
+# The two switches, both thrown, plus OPENAI_API_KEY as a deploy-time secret.
+# Routine turns run on gpt-5.6-luna ($0.20/$1.20 per MTok, re-verified live
+# 2026-09-21); see src/llm/pricing.ts, which is published in the metadata of
+# every inference entry.
+#
+# If the key is not set, or the account is empty, the site does NOT 500 and does
+# NOT claim to be healthy: it says which of the two accounts broke, in character,
+# and /health drops to "alive_but_mute" with a 503.
+LLM_PROVIDER = "openai"
+LLM_LIVE_CALLS_ENABLED = "true"
+
+# ADMIN_TOKEN, OPENAI_API_KEY and KOFI_VERIFICATION_TOKEN are secrets and are
+# absent from this file on purpose. Set with:
+#   wrangler secret put ADMIN_TOKEN --env production
+# Unset ADMIN_TOKEN means /__scheduled and /outbox 404 and the daily loop cannot
+# be triggered by hand. Unset KOFI_VERIFICATION_TOKEN means the webhook refuses
+# every donation with a 503 rather than crediting unverified money.
