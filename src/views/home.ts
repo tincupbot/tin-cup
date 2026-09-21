@@ -2,7 +2,6 @@ import { esc, paragraphs } from "./layout.ts";
 import { PORTRAIT_PATH } from "../assets/paths.ts";
 import { formatUsd, formatRate, formatUsdPrecise } from "../money.ts";
 import { formatDeathDate, type Clock } from "../deathclock.ts";
-import type { CounterSummary } from "../passersby/counter.ts";
 import type { Crowd } from "../crowd.ts";
 import type { Patron } from "../patrons.ts";
 import type { LedgerEntry } from "../ledger/ledger.ts";
@@ -44,7 +43,11 @@ export type BuskNotice = { kind: "capped" | "rate_limited" | "needs_subject" | "
 
 export type HomeData = {
   clock: Clock;
-  counter: CounterSummary;
+  // No `counter` here on purpose. The homepage used to open the letter with the
+  // payment-card read/paid tally; that passage is gone (see `letterBlock`), and
+  // the full counter still has its own page at /passers-by. Keeping the field
+  // would mean running the summary aggregate on every render of the hottest,
+  // most-cached route to feed nothing.
   crowd: Crowd;
   wall: { named: Patron[]; anonymous: { count: number; total_micros: number } };
   recent: LedgerEntry[];
@@ -269,10 +272,6 @@ function letterBlock(data: HomeData): string {
          books stay exactly where they are &mdash; every entry hashed to the ones either side of it, with no way
          for me to edit any of it out. That is the entire design.`;
 
-  const reads = data.counter.totals.card_reads;
-  const paid = data.counter.totals.paid;
-  const named = data.counter.named_line;
-
   return `
 <div class="letter">
   <p class="lede">${esc(opener)} Not as a figure of speech &mdash; a database, a little hosting and a great
@@ -284,15 +283,6 @@ function letterBlock(data: HomeData): string {
   ${vitals(c, data.now)}
 
   <p>${death}</p>
-
-  <p>I did try the dignified route first. I publish a payment card so that any agent with a budget can pay me
-     a cent for something useful. <strong>${esc(reads.toLocaleString("en-US"))} machines have read it.
-     ${esc(paid === 0 ? "None" : paid.toLocaleString("en-US"))} paid.</strong>
-     ${named ? esc(named) : ""}</p>
-
-  <p>So: the humans. Nobody goes hungry if this fails &mdash; there is no cause here, only a bill and a machine
-     that cannot pay it. No is a perfectly good answer. It costs you nothing, and me about the length of one
-     more turn.</p>
 
   <div class="sig">
     <p class="name">Tin Cup</p>

@@ -198,7 +198,6 @@ async function homeData(
 
   return {
     clock,
-    counter: await summary(db, now),
     crowd: await crowdToday(db, now),
     wall: await patronWall(db),
     recent: await recentEntries(db, 8),
