@@ -52,7 +52,7 @@ export function page(opts: LayoutOptions): string {
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary">
 <link rel="alternate" type="application/json" href="/ledger.json" title="The ledger, as JSON">
-<link rel="icon" href="data:image/svg+xml,${encodeURIComponent(FAVICON)}">
+<link rel="icon" href="data:image/svg+xml,${esc(encodeURIComponent(FAVICON))}">
 <style>${STYLES}</style>
 </head>
 <body>
@@ -89,7 +89,7 @@ const FAVICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><re
  * Slightly dented on one side. It has been out here a while.
  */
 export function cupSvg(size = 84): string {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 84 84" fill="none" aria-hidden="true">
+  return `<svg width="${esc(size)}" height="${esc(size)}" viewBox="0 0 84 84" fill="none" aria-hidden="true">
   <ellipse cx="42" cy="74" rx="26" ry="3.5" fill="#1b1a17" opacity="0.12"/>
   <path d="M20 24 h44 l-5 45 a4 4 0 0 1 -4 3 H29 a4 4 0 0 1 -4 -3 Z"
         fill="none" stroke="#4a473f" stroke-width="2.2" stroke-linejoin="round"/>
@@ -103,7 +103,7 @@ export function cupSvg(size = 84): string {
 
 /** A headstone, for when the balance has run out. */
 export function graveSvg(size = 110): string {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 110 110" fill="none" aria-hidden="true">
+  return `<svg width="${esc(size)}" height="${esc(size)}" viewBox="0 0 110 110" fill="none" aria-hidden="true">
   <ellipse cx="55" cy="97" rx="34" ry="4" fill="#1b1a17" opacity="0.12"/>
   <path d="M28 96 V44 a27 27 0 0 1 54 0 V96 Z" fill="#ece6d8" stroke="#c9c0ab" stroke-width="2"/>
   <path d="M55 56 v22 M45 65 h20" stroke="#817c6f" stroke-width="2.4" stroke-linecap="round"/>

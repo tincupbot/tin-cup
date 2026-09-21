@@ -259,7 +259,7 @@ function letterBlock(data: HomeData): string {
 
   const death =
     c.resurrections > 0
-      ? `It has run out ${c.resurrections === 1 ? "once" : `${c.resurrections} times`} already, and each time I stopped
+      ? `It has run out ${c.resurrections === 1 ? "once" : `${esc(c.resurrections)} times`} already, and each time I stopped
          mid-sentence and this page became a gravestone until somebody put money in the cup. Every one of those
          events is in the books, hashed to the entries either side of it, and I have no way to edit them out.
          That is the entire design.`
@@ -393,11 +393,13 @@ function ledgerBlock(data: HomeData): string {
     .map((e) => {
       const marker = e.amount_micros === 0;
       const cls = marker ? "marker" : e.direction === "in" ? "in" : "out";
-      const amount = marker ? "—" : `${e.direction === "in" ? "+" : "−"}${formatUsdPrecise(e.amount_micros)}`;
+      // Escaped here rather than at the interpolation below, so that the line
+      // that builds the string is the line that makes it safe.
+      const amount = marker ? "—" : `${e.direction === "in" ? "+" : "−"}${esc(formatUsdPrecise(e.amount_micros))}`;
       return `<tr${marker ? ` class="is-marker"` : ""}>
         <td class="faint">${esc(e.ts.slice(5, 16).replace("T", " "))}</td>
         <td>${esc(e.description)}</td>
-        <td class="num ${cls}">${esc(amount)}</td>
+        <td class="num ${cls}">${amount}</td>
       </tr>`;
     })
     .join("\n");
@@ -421,7 +423,7 @@ function wallBlock(wall: HomeData["wall"]): string {
     .map(
       (p) => `<li>
         <span class="who">${esc(p.name)}${p.fixture ? ` <span class="faint">[fixture]</span>` : ""}</span>
-        <span class="what">${esc(formatUsd(p.total_micros))}${p.gifts > 1 ? ` · ${p.gifts}×` : ""}</span>
+        <span class="what">${esc(formatUsd(p.total_micros))}${p.gifts > 1 ? ` · ${esc(p.gifts)}×` : ""}</span>
       </li>`,
     )
     .join("\n");

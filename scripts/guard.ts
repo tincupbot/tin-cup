@@ -12,6 +12,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { formatFinding, unescapedInterpolations } from "./escape-rule.ts";
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url).href), "..");
 
@@ -103,26 +104,14 @@ const viewTs = srcTs.filter((f) => f.includes("/views/"));
 // --- 4. Interpolation in a view goes through esc(). -------------------------
 //
 // The one injection surface this project has, and model output goes through it.
+// The rule itself lives in scripts/escape-rule.ts, because it is the only rule
+// here complicated enough to be worth a test of its own — see
+// test/escape-rule.test.ts, which proves it still bites.
 {
-  const SAFE = /^\s*(esc\(|paragraphs\(|cupSvg\(|graveSvg\(|opts\.body|opts\.banner|opts\.aboveFold|STYLES|FAVICON|CSP)/;
-  // Interpolations that are structural rather than content: numbers we computed,
-  // class names we chose, and calls whose own bodies are checked by this rule.
-  const STRUCTURAL = /^\s*[\w.]*(pct|rows|urls|items|tiers|body|block|html|Block|Line|svg|Svg|SPAN)[\w.]*[\s(]/;
   for (const f of viewTs) {
-    const body = read(f);
-    const lines = body.split("\n");
-    lines.forEach((line, i) => {
-      const matches = line.matchAll(/\$\{([^}]*)/g);
-      for (const m of matches) {
-        const expr = m[1] ?? "";
-        if (SAFE.test(expr) || STRUCTURAL.test(expr)) continue;
-        // Ternaries and template fragments whose branches are themselves checked
-        // on their own lines.
-        if (expr.includes("esc(") || expr.trim() === "" || /^\s*\w+\s*\?\s*`/.test(expr)) continue;
-        if (/^\s*(true|false|\d|-|\.)/.test(expr)) continue;
-        fail(f, "escape-everything", `line ${i + 1}: \${${expr.trim().slice(0, 60)}} is not wrapped in esc()`);
-      }
-    });
+    for (const finding of unescapedInterpolations(read(f))) {
+      fail(f, "escape-everything", formatFinding(finding));
+    }
   }
 }
 

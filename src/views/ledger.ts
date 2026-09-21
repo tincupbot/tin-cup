@@ -29,10 +29,12 @@ export function ledgerBody(data: LedgerPageData): string {
     .map((e, i) => {
       const marker = e.amount_micros === 0;
       const cls = marker ? "marker" : e.direction === "in" ? "in" : "out";
-      const amount = marker ? "—" : `${e.direction === "in" ? "+" : "−"}${formatUsdPrecise(e.amount_micros)}`;
+      // Escaped here rather than at the interpolation below, so that the line
+      // that builds the string is the line that makes it safe.
+      const amount = marker ? "—" : `${e.direction === "in" ? "+" : "−"}${esc(formatUsdPrecise(e.amount_micros))}`;
       const meta = metaLine(e);
       return `<tr${marker ? ` class="is-marker"` : ""}>
-  <td class="faint">${i}</td>
+  <td class="faint">${esc(i)}</td>
   <td class="faint">${esc(e.ts.replace("T", " ").slice(0, 16))}</td>
   <td>
     ${esc(e.kind)}<br>
@@ -40,14 +42,14 @@ export function ledgerBody(data: LedgerPageData): string {
     ${meta ? `<br><span class="faint">${meta}</span>` : ""}
     <br><span class="hash">${esc(e.hash)}</span>
   </td>
-  <td class="num ${cls}">${esc(amount)}</td>
+  <td class="num ${cls}">${amount}</td>
 </tr>`;
     })
     .join("\n");
 
   const verdict = data.verify.valid
     ? `<div class="notice"><strong>Chain verifies.</strong> ${data.verify.entries.toLocaleString("en-US")} entries recomputed from genesis. Head is <span class="hash">${esc(data.verify.head ?? "")}</span></div>`
-    : `<div class="notice warn"><strong>Chain does not verify.</strong> First bad entry is index ${data.verify.first_bad_index} (<span class="hash">${esc(data.verify.first_bad_id ?? "")}</span>): ${esc(data.verify.reason ?? "")}</div>`;
+    : `<div class="notice warn"><strong>Chain does not verify.</strong> First bad entry is index ${esc(data.verify.first_bad_index)} (<span class="hash">${esc(data.verify.first_bad_id ?? "")}</span>): ${esc(data.verify.reason ?? "")}</div>`;
 
   return `
 <header class="masthead"><h1>The ledger</h1><span class="tag">every cent, both directions</span></header>

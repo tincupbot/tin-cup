@@ -34,7 +34,7 @@ export function graveBody(data: GraveData): string {
       (t) => `<tr>
         <td>${esc(t.kind)}</td>
         <td class="faint">${esc(t.direction)}</td>
-        <td class="num">${t.n}</td>
+        <td class="num">${esc(t.n)}</td>
         <td class="num ${t.direction === "in" ? "in" : "out"}">${esc(formatUsdPrecise(t.total_micros))}</td>
       </tr>`,
     )
@@ -55,7 +55,7 @@ export function graveBody(data: GraveData): string {
 <div class="grave">
   ${graveSvg(110)}
   <h1>${esc(copy.GRAVESTONE_TITLE)}</h1>
-  <p class="dates">${esc(shortDate(data.firstEntryAt))} — ${esc(shortDate(data.clock.died_at))}${data.clock.resurrections > 0 ? ` · lifetime ${data.clock.resurrections + 1}` : ""}</p>
+  <p class="dates">${esc(shortDate(data.firstEntryAt))} — ${esc(shortDate(data.clock.died_at))}${data.clock.resurrections > 0 ? ` · lifetime ${esc(data.clock.resurrections + 1)}` : ""}</p>
 </div>
 
 <p class="pull">${esc(copy.GRAVESTONE_BODY)}</p>
