@@ -125,27 +125,26 @@ LLM_LIVE_CALLS_ENABLED = "false"   # must be "true" AND a provider key set for r
 name = "tin-cup"
 # The hat is a link on a page; there is no scheduled-only mode here.
 workers_dev = true
+# One canonical hostname, deliberately. Per-version preview URLs would serve the
+# same site, with the same live ledger and the same billable /busk, at addresses
+# whose SITE_URL is wrong — so the agent card and llms.txt they hand out would
+# point somewhere else. On a site that asks to be audited, one address.
+preview_urls = false
 
 [[env.production.d1_databases]]
 binding = "DB"
 database_name = "tincup"
-# PLACEHOLDER. Filled in by hand after `wrangler d1 create tincup`, which prints
-# the real uuid. The deploy will succeed against this zero uuid and then fail on
-# every request, so this is step two of DEPLOY.md and not an optional one.
-database_id = "00000000-0000-0000-0000-000000000000"
+# Created 2026-09-21 with `wrangler d1 create tincup` (region EEUR). Not a
+# secret: useless without account credentials.
+database_id = "047036fd-0564-437f-b3cf-44df197650ae"
 migrations_dir = "migrations"
 
 [env.production.vars]
 
 SITE_NAME = "Tin Cup"
 
-# >>> WRONG UNTIL CORRECTED. FIRST JOB AFTER THE FIRST DEPLOY. <<<
-#
-# `wrangler deploy` prints the real hostname. Put it here, verbatim, and deploy
-# again — it is a two-deploy dance and that is expected, because the hostname
-# does not exist until the first one finishes.
-#
-# This is not cosmetic. This string is:
+# Set 2026-09-21 from the hostname the first deploy printed. Do not change it
+# without deploying again: this string is not cosmetic. It is:
 #   - the `resource` field in the x402 challenge (a payment scoped to the wrong
 #     resource is not a payment for this endpoint),
 #   - every absolute URL in llms.txt and /.well-known/agent.json, which is how
@@ -153,7 +152,7 @@ SITE_NAME = "Tin Cup"
 #   - the sitemap and robots.txt Sitemap: line.
 # Left as the placeholder, the site would spend its launch telling every crawler
 # and every agent to go to a hostname that does not resolve.
-SITE_URL = "https://tin-cup.<subdomain>.workers.dev"
+SITE_URL = "https://tin-cup.shaw-ben1.workers.dev"
 
 SOURCE_URL = "https://github.com/tincupbot/tin-cup"
 
