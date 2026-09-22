@@ -236,6 +236,37 @@ describe("settlement stays off unless both halves are configured", () => {
     expect(x402Config(keys as never).settlementReady).toBe(false);
     expect(x402Config({ ...wallet, ...keys } as never).settlementReady).toBe(true);
   });
+
+  // A malformed payTo is the quiet version of having no wallet at all: it is
+  // non-empty and non-zero, so every "is there an address" check passes, and
+  // the money goes to somewhere nobody holds a key to. Shape is checked once,
+  // where the config is read, so no caller has to remember to.
+  it("treats a malformed pay-to address as no wallet at all", () => {
+    const keys = { CDP_API_KEY_ID: "a", CDP_API_KEY_SECRET: "b" };
+    const malformed = [
+      "0x36Da95a2ddF715746f36132f515986f96e5ef83",      // 39 chars — one dropped
+      "0x36Da95a2ddF715746f36132f515986f96e5ef83FF",    // 41 chars — one too many
+      "36Da95a2ddF715746f36132f515986f96e5ef83F",       // no 0x
+      "0x36Da95a2ddF715746f36132f515986f96e5ef83G",     // not hex
+      "not an address",
+      "",
+      "   ",
+    ];
+    for (const payTo of malformed) {
+      const cfg = x402Config({ X402_PAY_TO: payTo, ...keys } as never);
+      expect(cfg.isPlaceholder, payTo).toBe(true);
+      expect(cfg.settlementReady, payTo).toBe(false);
+    }
+
+    // The real one, and the same value with stray whitespace around it.
+    const good = "0x36Da95a2ddF715746f36132f515986f96e5ef83F";
+    for (const payTo of [good, `  ${good}\n`]) {
+      const cfg = x402Config({ X402_PAY_TO: payTo, ...keys } as never);
+      expect(cfg.isPlaceholder).toBe(false);
+      expect(cfg.settlementReady).toBe(true);
+      expect(cfg.payTo).toBe(good);
+    }
+  });
 });
 
 describe("the settlement attempt is recorded before its outcome is known", () => {

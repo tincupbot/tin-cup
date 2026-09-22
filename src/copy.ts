@@ -217,14 +217,14 @@ export const X402_THANKS = "Received. That is the first useful thing a machine h
 // ---------------------------------------------------------------------------
 
 export const MACHINE_PAYMENT_OFF =
-  "Machine payment is not wired up yet. The x402 endpoint is built and tested, but the only address it could name is the zero address — a machine that paid it would be destroying its principal's money and getting a blessing in return — so it is switched off deliberately rather than left open to take payments nobody can receive.";
+  "Machine payment is not switched on yet. There is now a real address to receive it, which there was not before, and the code to verify and settle a payment exists and is tested against a stub. What has not happened is a single payment driven end to end against the live facilitator. Until it has, the endpoint stays shut: a challenge I have never seen answered is a promise I have not earned, and the failure it would hide is a payment that settles on chain and never reaches the books.";
 
 export const MACHINE_PAYMENT_OFF_SHORT =
-  "Machine payment is switched off: there is no wallet to pay, so paying would burn your funds.";
+  "Machine payment is switched off: there is an address now, but settlement has not been proven end to end yet.";
 
 /** What `/alms` says when x402 is disabled. Aimed at a machine, still in character. */
 export const ALMS_DISABLED_DETAIL =
-  "This endpoint normally answers 402 with an x402 challenge. It is switched off because the pay-to address is the zero address: a settled payment would be burned, not received. Nothing here is broken and nothing here is hiding. You are still counted — that is the part that was always working.";
+  "This endpoint normally answers 402 with an x402 challenge. It is switched off on purpose: there is a receiving address, but the verify-and-settle path has not yet been proven against the live facilitator, and I will not take a stranger's money through a path I have only tested with a stub. Nothing here is broken and nothing here is hiding. You are still counted — that is the part that was always working.";
 
 // ---------------------------------------------------------------------------
 // The provider is unreachable, unpaid, or unwilling.

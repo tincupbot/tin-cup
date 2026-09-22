@@ -156,6 +156,19 @@ const viewTs = srcTs.filter((f) => f.includes("/views/"));
   };
   const has = (body: string, key: string, value: string) =>
     new RegExp(`^\\s*${key}\\s*=\\s*"${value}"`, "m").test(body);
+  /**
+   * The assigned value of one key, or "" if it is not assigned at all.
+   *
+   * Use this rather than searching a section for a substring. These blocks are
+   * mostly comments, and the comments quote the very addresses the rules are
+   * about — so `body.includes(someAddress)` answers "is this address mentioned
+   * anywhere, including in a sentence explaining how to set it", which is not
+   * the question. That exact bug made the mainnet-asset rule pass on a config
+   * naming base mainnet with testnet USDC, because the runbook comment above
+   * it contains the mainnet address. Rules read values; prose is prose.
+   */
+  const value = (body: string, key: string): string =>
+    new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m").exec(body)?.[1] ?? "";
 
   const local = section("[vars]");
   const prod = section("[env.production.vars]");
@@ -194,8 +207,21 @@ const viewTs = srcTs.filter((f) => f.includes("/views/"));
     // a different contract from Base USDC, and naming the wrong one means a
     // payment that cannot settle or, worse, settles in play money.
     if (!payToIsZero) {
+      // Shape. A payTo with a dropped or transposed character is still a
+      // non-empty string and would still be printed in the challenge as
+      // somewhere to send money — except nobody holds its key, so every
+      // payment to it is burned. src/env.ts refuses to treat a malformed
+      // address as settlement-ready at runtime; this stops it reaching a
+      // deploy at all. Neither check knows a correct address from a
+      // valid-looking wrong one. That is what the EIP-55 checksum is for, and
+      // it is done by hand before the value is pasted in.
+      const payTo = value(prod, "X402_PAY_TO");
+      if (!/^0x[0-9a-fA-F]{40}$/.test(payTo)) {
+        fail(TOML, "no-wallet", `production X402_PAY_TO is not a well-formed address: ${JSON.stringify(payTo)}`);
+      }
       const mainnet = has(prod, "X402_NETWORK", "base");
-      const usdcMainnet = /0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913/i.test(prod);
+      const usdcMainnet = value(prod, "X402_ASSET").toLowerCase()
+        === "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".toLowerCase();
       if (mainnet && !usdcMainnet) {
         fail(TOML, "no-wallet", "production names base mainnet but X402_ASSET is not mainnet USDC");
       }

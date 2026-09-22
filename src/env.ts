@@ -217,7 +217,21 @@ export type X402Config = {
   asset: string;
   assetName: string;
   assetDecimals: number;
-  /** True when payTo is the zero address, i.e. there is no wallet to receive anything. */
+  /**
+   * True when payTo is not a usable receiving address — the zero address,
+   * empty, or anything that is not a well-formed 20-byte hex address.
+   *
+   * The malformed case matters as much as the empty one. A payTo with a
+   * transposed character is still a string, still non-zero, and would be
+   * advertised in the x402 challenge as somewhere to send money. On Base that
+   * is a send to an address nobody holds the key to, which is a burn. So the
+   * shape is checked here, once, at the point the config is read, rather than
+   * trusted because somebody typed it carefully.
+   *
+   * This is shape only: it cannot tell a correct address from a valid-looking
+   * wrong one. The checksum is the defence against that, and it belongs to
+   * whoever pastes the value in.
+   */
   isPlaceholder: boolean;
   /**
    * True only when a payment could actually settle and be credited: a real
@@ -235,9 +249,12 @@ export type X402Config = {
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
+/** 0x followed by exactly 40 hex characters. Shape, not correctness. */
+const ADDRESS_SHAPE = /^0x[0-9a-fA-F]{40}$/;
+
 export function x402Config(env: Env): X402Config {
-  const payTo = env.X402_PAY_TO ?? ZERO_ADDRESS;
-  const isPlaceholder = payTo === ZERO_ADDRESS || payTo === "";
+  const payTo = (env.X402_PAY_TO ?? ZERO_ADDRESS).trim();
+  const isPlaceholder = payTo === ZERO_ADDRESS || !ADDRESS_SHAPE.test(payTo);
   const hasFacilitator = Boolean(env.CDP_API_KEY_ID?.trim() && env.CDP_API_KEY_SECRET?.trim());
   return {
     enabled: env.X402_ENABLED !== "false",

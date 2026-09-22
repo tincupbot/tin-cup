@@ -4,6 +4,7 @@ import { app } from "../src/index.ts";
 import { append, allEntries } from "../src/ledger/ledger.ts";
 import { readProviderStatus } from "../src/llm/index.ts";
 import type { Env } from "../src/env.ts";
+import * as copy from "../src/copy.ts";
 
 /**
  * The states a deployed Tin Cup can be in that a local one cannot.
@@ -77,7 +78,13 @@ describe("machine payment switched off", () => {
     // It still counts you, and says so. That is the half of this that never
     // needed a wallet.
     expect(body["counted"]).toBe(true);
-    expect(String(body["detail"])).toContain("zero address");
+    // The reason is given, and it is a reason rather than a word. Asserted by
+    // shape, not by phrasing: the wording changed on 2026-09-22 when the
+    // reason stopped being "there is no address" and became "settlement is not
+    // proven", and three tests failed for having memorised a sentence instead
+    // of the claim it was making.
+    expect(String(body["detail"])).toContain("switched off");
+    expect(String(body["detail"]).length).toBeGreaterThan(80);
 
     // And nothing was written to the books for a payment that cannot happen.
     expect(await allEntries(db)).toHaveLength(1);
@@ -98,15 +105,15 @@ describe("machine payment switched off", () => {
   it("keeps the machine-payment apparatus off the homepage", async () => {
     const { env } = await setup();
     const html = await (await app.fetch(get("/"), env)).text();
-    expect(html).not.toContain("Machine payment is not wired up yet");
-    expect(html).not.toContain("destroying its principal");
+    expect(html).not.toContain(copy.MACHINE_PAYMENT_OFF);
+    expect(html).not.toContain("x402");
   });
 
   it("still says it in full to anything that asks /alms", async () => {
     const { env } = await setup();
     const body = await (await app.fetch(get("/alms"), env)).text();
-    expect(body).toContain("zero address");
-    expect(body).toContain("burned, not received");
+    // The whole disclosure, verbatim, wherever the copy happens to be today.
+    expect(body).toContain(copy.ALMS_DISABLED_DETAIL);
   });
 
   it("tells llms.txt readers to keep their money", async () => {
@@ -116,6 +123,44 @@ describe("machine payment switched off", () => {
     expect(txt).toContain("Do not construct a payment");
     // No 402 instructions, because following them would be a waste of a budget.
     expect(txt).not.toContain("Retry with an X-PAYMENT header");
+  });
+
+  // The state the project actually entered on 2026-09-22: a real receiving
+  // address, no facilitator credentials. Every "is there a wallet" check passes
+  // in this state, which is exactly why it is dangerous — the agent card used
+  // to compute `settles` from having an address, so it would have told a
+  // paying agent that its money would arrive when nothing could have received
+  // it. The claim has to key off being able to settle, not off having somewhere
+  // to settle to.
+  describe("an address with no settlement path behind it", () => {
+    const halfConfigured = {
+      X402_ENABLED: "true",
+      X402_PAY_TO: "0x36Da95a2ddF715746f36132f515986f96e5ef83F",
+      CDP_API_KEY_ID: "",
+      CDP_API_KEY_SECRET: "",
+    };
+
+    it("does not tell the agent card that a payment would settle", async () => {
+      const db = await freshDb();
+      await fund(db, 5);
+      const env = testEnv(db, halfConfigured);
+      const card = (await (await app.fetch(get("/.well-known/agent.json"), env)).json()) as {
+        x_tin_cup: { payment: { settles: boolean; pay_to: string; note: string } };
+      };
+
+      expect(card.x_tin_cup.payment.pay_to).toBe(halfConfigured.X402_PAY_TO);
+      expect(card.x_tin_cup.payment.settles).toBe(false);
+      expect(card.x_tin_cup.payment.note).toContain("Do not send funds");
+    });
+
+    it("does not tell llms.txt readers their authorization gets verified", async () => {
+      const db = await freshDb();
+      await fund(db, 5);
+      const txt = await (await app.fetch(get("/llms.txt"), testEnv(db, halfConfigured))).text();
+
+      expect(txt).toContain("Nothing settles here");
+      expect(txt).not.toContain("transaction hash as the receipt");
+    });
   });
 
   it("marks the agent card's one skill unavailable instead of advertising it", async () => {
@@ -128,7 +173,7 @@ describe("machine payment switched off", () => {
     expect(card.skills[0]!.description).toContain("CURRENTLY UNAVAILABLE");
     expect(card.skills[0]!.tags).toContain("unavailable");
     expect(card.x_tin_cup.payment.accepting).toBe(false);
-    expect(card.x_tin_cup.payment.note).toContain("not wired up");
+    expect(card.x_tin_cup.payment.note).toBe(copy.MACHINE_PAYMENT_OFF);
   });
 
   it("still advertises the card and the ledger, which cost nothing to honour", async () => {
