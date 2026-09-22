@@ -252,6 +252,29 @@ describe("settlement refuses rather than inventing money", () => {
     expect(await balance(db)).toBe(0);
   });
 
+  it("logs the whole reply when success arrives without a receipt", async () => {
+    // Refusing is right, but refusing silently would throw away the only copy
+    // of the one reply that could mean money moved and the books never knew.
+    // Nothing else in this file is reconstructable from a reason string.
+    const db = await freshDb();
+    const logged: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    });
+    stubFacilitator({
+      verify: OK_VERIFY,
+      settle: { body: { success: true, network: "base-sepolia", receipt: { hash: "0xdeadbeef" } } },
+    });
+
+    await alms(db, env(db));
+    const line = logged.find((l) => l.includes("no transaction hash"));
+    expect(line).toBeDefined();
+    // Verbatim enough to reconcile against later — including the field we
+    // did not know to read.
+    expect(line).toContain("0xdeadbeef");
+    expect(await balance(db)).toBe(0);
+  });
+
   it("credits a settled payment exactly once, however many times it is sent", async () => {
     const db = await freshDb();
     const header = paymentHeader();

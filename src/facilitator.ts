@@ -346,6 +346,19 @@ export async function settlePayment(
     };
   }
 
+  // THE ONE FAILURE WORTH SHOUTING ABOUT. A facilitator claiming success while
+  // giving us nothing we recognise as a receipt is the shape of "money moved
+  // and our books never found out" — either the transfer really did happen
+  // under a field name we do not read, or the claim is empty. Both are
+  // reconcilable later and neither is reconstructable from the reason string
+  // alone, so the whole reply goes to the log, which is persisted for a week.
+  // See `[env.production.observability]` in wrangler.toml.
+  //
+  // It is still a refusal. Nothing here credits on a hash it cannot see.
+  if (body["success"] === true) {
+    console.error("settle claimed success with no transaction hash", JSON.stringify({ status: res.status, body }));
+  }
+
   return {
     ok: false,
     reason: str(body["errorReason"]) ?? (res.status === 200 ? "settlement_incomplete" : `http_${res.status}`),

@@ -240,12 +240,26 @@ MAX_CALL_COST_MICROS = "25000"
 #      secret. Checksum verified against EIP-55 before it was written here, and
 #      the guard refuses anything that is not a well-formed address, because a
 #      transposed character is a burn address with a plausible shape.
-#   3. TODO (needs Ben) — `wrangler secret put CDP_API_KEY_ID --env production`
-#      and the same for CDP_API_KEY_SECRET. These authenticate verify/settle.
-#      They cannot move funds — the destination is X402_PAY_TO above, which is
-#      public config and not something a key holder can change.
-#   4. TODO — X402_ENABLED = "true". Not before a payment has been driven end to
-#      end on base-sepolia, which proves the CDP auth rather than assuming it.
+#   3. DONE 2026-09-22 (Ben) — CDP_API_KEY_ID and CDP_API_KEY_SECRET are set as
+#      deploy secrets. They authenticate verify/settle and cannot move funds:
+#      the destination is X402_PAY_TO above, which is public config and not
+#      something a key holder can change.
+#   4. TODO — X402_ENABLED = "true".
+#
+#      What `GET /__facilitator?probe=verify` has now proven against the live
+#      facilitator, rather than against a stub: the credential authenticates,
+#      CDP settles `exact` on `base`, our request body is the shape it accepts,
+#      and it parses our payload far enough to recover the payer and reject the
+#      signature. It also found a real bug — CDP returns a decline as HTTP 400
+#      with the verdict in the body, and eleven stubbed tests had all agreed
+#      with each other that it would be a 200.
+#
+#      What is still unproven: a *successful* settle. Its response has only ever
+#      been seen from a stub, so the field names we read it by are read from the
+#      spec, not from Coinbase. The failure that would hide — settled on chain,
+#      credited nowhere — is refused rather than mis-booked, leaves an
+#      `attempted` row with the nonce, and now logs the entire reply. Closing it
+#      properly needs one real payment driven through base-sepolia.
 #
 # Steps 1-3 without 4 is a safe intermediate state, and so is 4 without 3:
 # `settlementReady` in src/env.ts requires BOTH a real address and credentials
