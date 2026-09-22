@@ -51,6 +51,18 @@ export type Env = {
   // --- Secrets. Never committed, never logged, never rendered. ---
   /** Ko-fi webhook verification token. Absent locally; the webhook rejects when absent. */
   KOFI_VERIFICATION_TOKEN?: string;
+  /**
+   * Coinbase CDP secret API key, the two halves of it. They authenticate the
+   * facilitator calls that verify and settle x402 payments. They do not sign
+   * anything and they cannot move funds — the money goes to X402_PAY_TO, which
+   * is public config, not to whoever holds this key.
+   *
+   * Absent means no settlement is possible, which means `/alms` will not credit
+   * anything. That is the safe default and it is load-bearing: see
+   * `settlementReady`.
+   */
+  CDP_API_KEY_ID?: string;
+  CDP_API_KEY_SECRET?: string;
   /** Absent. The Anthropic provider is inert without it and stays that way. */
   ANTHROPIC_API_KEY?: string;
   /** Absent. The OpenAI provider is inert without it and stays that way. */
@@ -205,14 +217,28 @@ export type X402Config = {
   asset: string;
   assetName: string;
   assetDecimals: number;
-  /** True when payTo is the zero address, i.e. there is no wallet. Always true today. */
+  /** True when payTo is the zero address, i.e. there is no wallet to receive anything. */
   isPlaceholder: boolean;
+  /**
+   * True only when a payment could actually settle and be credited: a real
+   * receiving address AND facilitator credentials to verify and settle against.
+   *
+   * Every claim the site makes about taking machine money keys off this one
+   * boolean — the homepage copy, llms.txt, the agent card, and whether `/alms`
+   * books a credit or a zero-amount marker. One flag, so they cannot disagree
+   * with each other. A wallet with no facilitator is a promise we cannot keep;
+   * a facilitator with no wallet is a payment with nowhere to land. Neither is
+   * sufficient on its own and neither is allowed to look sufficient.
+   */
+  settlementReady: boolean;
 };
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export function x402Config(env: Env): X402Config {
   const payTo = env.X402_PAY_TO ?? ZERO_ADDRESS;
+  const isPlaceholder = payTo === ZERO_ADDRESS || payTo === "";
+  const hasFacilitator = Boolean(env.CDP_API_KEY_ID?.trim() && env.CDP_API_KEY_SECRET?.trim());
   return {
     enabled: env.X402_ENABLED !== "false",
     network: env.X402_NETWORK ?? "base-sepolia",
@@ -221,6 +247,7 @@ export function x402Config(env: Env): X402Config {
     asset: env.X402_ASSET ?? "",
     assetName: env.X402_ASSET_NAME ?? "USDC",
     assetDecimals: num(env.X402_ASSET_DECIMALS, 6),
-    isPlaceholder: payTo === ZERO_ADDRESS || payTo === "",
+    isPlaceholder,
+    settlementReady: !isPlaceholder && hasFacilitator,
   };
 }

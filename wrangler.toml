@@ -217,17 +217,35 @@ ROAST_RATE_LIMIT = "5"
 DAILY_SPEND_CAP_MICROS = "500000"
 MAX_CALL_COST_MICROS = "25000"
 
-# --- x402: OFF IN PRODUCTION. ---------------------------------------------
+# --- x402: OFF IN PRODUCTION, PENDING A WALLET. ----------------------------
 #
-# Decision taken 2026-09-21, and it is a money-safety decision rather than a
-# scope one. X402_PAY_TO is the zero address: there is no wallet, because a
-# wallet means an exchange account with KYC under somebody's name and that has
-# not been decided. An agent that paid the challenge would be sending USDC to
-# 0x0 — burning its principal's money — and receiving a blessing for it.
+# Decision taken 2026-09-21: no wallet, endpoint off, because an agent paying
+# the challenge would have been sending USDC to 0x0 — burning its principal's
+# money — and receiving a blessing for it.
 #
-# So the endpoint is switched off rather than left open. Every line of x402 code
-# and every one of its tests stays exactly where it is; this is a config flag,
-# not a removal, and flipping it back is one line plus a real address.
+# Revised 2026-09-22: Ben chose a Coinbase deposit address on Base. The code to
+# verify and settle now exists (src/facilitator.ts, against the Coinbase CDP
+# facilitator) and is tested. What does not exist yet is the address itself and
+# the CDP credentials, so the config below is unchanged and the endpoint stays
+# off. This is deliberate — shipping the code is separable from switching on the
+# money, and doing them in that order is how the switch-on gets to be one
+# reviewable change rather than a deploy with a surprise in it.
+#
+# TO TURN IT ON, in this order:
+#   1. X402_NETWORK = "base", X402_ASSET = mainnet USDC
+#      (0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913). The guard enforces that
+#      those two move together; a mainnet address on a testnet network sends a
+#      stranger's money somewhere it cannot be recovered from.
+#   2. X402_PAY_TO = the Coinbase Base deposit address. Public, not a secret.
+#   3. `wrangler secret put CDP_API_KEY_ID` and `CDP_API_KEY_SECRET`. These
+#      authenticate verify/settle. They cannot move funds — the destination is
+#      X402_PAY_TO above, which is public config.
+#   4. X402_ENABLED = "true".
+#
+# Steps 1-3 without 4 is a safe intermediate state, and so is 4 without 3:
+# `settlementReady` in src/env.ts requires BOTH a real address and credentials
+# before a single micro-dollar can be credited. Without both, a payment is
+# recorded as a zero-amount `alms_offer` marker and the books do not move.
 #
 # What "off" must never mean is "quietly gone". /alms answers 503 with the
 # reason in full, the agent card marks the skill unavailable, llms.txt says
@@ -237,7 +255,7 @@ MAX_CALL_COST_MICROS = "25000"
 X402_ENABLED = "false"
 X402_NETWORK = "base-sepolia"
 X402_PRICE_MICROS = "10000"
-X402_PAY_TO = "0x0000000000000000000000000000000000000000"           # no wallet exists
+X402_PAY_TO = "0x0000000000000000000000000000000000000000"           # no wallet yet
 X402_ASSET = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 X402_ASSET_NAME = "USDC"
 X402_ASSET_DECIMALS = "6"

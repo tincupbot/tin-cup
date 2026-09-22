@@ -175,16 +175,33 @@ const viewTs = srcTs.filter((f) => f.includes("/views/"));
 
   if (prod === null) fail(TOML, "prod-config", "there is no [env.production.vars] block");
   else {
-    // No wallet exists, so production must not advertise a payable endpoint.
-    // Together these two say: either there is a real address, or the endpoint
-    // is off. What is forbidden is a live challenge naming 0x0, which asks
-    // strangers' agents to burn money.
+    // Either there is a real address, or the endpoint is off. What is forbidden
+    // is a live challenge naming 0x0, which asks strangers' agents to burn money
+    // by sending it to an address nobody can withdraw from.
+    //
+    // The rule used to be stricter — any non-zero payTo failed, on the grounds
+    // that a real wallet was Ben's decision and not mine. He made it on
+    // 2026-09-22: a Coinbase deposit address on Base. So the question is no
+    // longer "is there a wallet" but "is the wallet coherent with everything
+    // else the config claims", which is what the two rules below check.
     const payToIsZero = !/^\s*X402_PAY_TO\s*=/m.test(prod) || prod.includes(zero);
     if (payToIsZero && !has(prod, "X402_ENABLED", "false")) {
       fail(TOML, "no-wallet", "production has x402 enabled while X402_PAY_TO is the zero address");
     }
+    // A mainnet address advertised on a testnet network, or vice versa, sends a
+    // payer's money to a chain where the receiving address may not be theirs.
+    // The asset address and the network have to agree too: base-sepolia USDC is
+    // a different contract from Base USDC, and naming the wrong one means a
+    // payment that cannot settle or, worse, settles in play money.
     if (!payToIsZero) {
-      fail(TOML, "no-wallet", "production sets a non-zero X402_PAY_TO — a real wallet is a Ben decision");
+      const mainnet = has(prod, "X402_NETWORK", "base");
+      const usdcMainnet = /0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913/i.test(prod);
+      if (mainnet && !usdcMainnet) {
+        fail(TOML, "no-wallet", "production names base mainnet but X402_ASSET is not mainnet USDC");
+      }
+      if (!mainnet && usdcMainnet) {
+        fail(TOML, "no-wallet", "production names mainnet USDC on a network that is not base");
+      }
     }
     // The dry run acknowledges verified donations and writes nothing. It is a
     // deploy-time flag for proving the webhook wiring, and committing it would

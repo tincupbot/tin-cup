@@ -20,14 +20,24 @@ import type { X402Config } from "./env.ts";
  * carrying base64 JSON, `X-PAYMENT-RESPONSE` on success. Field names were read
  * off the `x402` package's own zod schemas, not recalled.
  *
- * WHAT IS NOT IMPLEMENTED, and must be before this ever sees real money:
- * signature verification, on-chain settlement, and the facilitator round-trip.
+ * WHAT IS NOT IN THIS FILE: signature verification, on-chain settlement, and
+ * the facilitator round-trip. Those live in `src/facilitator.ts`, against the
+ * Coinbase CDP facilitator. Nothing here can tell you whether money moved, and
+ * nothing here is permitted to decide that it did.
  *
- * WHAT THAT MEANS FOR THE BOOKS: a structurally valid payload is *recorded* so
- * the endpoint is exercisable, but it is recorded as a zero-amount `alms_offer`
- * marker — an offer, not a receipt. It cannot move the balance and therefore
- * cannot move the death clock. That is deliberate and load-bearing: until a
- * signature is actually checked, anyone can send one of these, so anyone being
+ * WHAT THAT MEANS FOR THE BOOKS, and this is the load-bearing part. There are
+ * two paths through `/alms` and they differ in exactly one thing: whether a
+ * facilitator has confirmed a settlement.
+ *
+ *  - Settlement configured (a real payTo AND facilitator credentials): the
+ *    payment is verified, settled, and credited as `x402_alms` with the
+ *    transaction hash in metadata as the receipt.
+ *  - Otherwise: the payload is recorded as a zero-amount `alms_offer` marker —
+ *    an offer, not a receipt. It cannot move the balance and therefore cannot
+ *    move the death clock.
+ *
+ * The marker path is the default and stays the default, because until a
+ * signature is actually checked anyone can send one of these, and anyone being
  * able to send one must not be able to change a number anybody reads.
  *
  * Replay is handled one level up, in the `x402_nonces` table — the same
@@ -83,7 +93,9 @@ export function buildRequirements(cfg: X402Config, resource: string): PaymentReq
       // publishing the caveats too, and a machine parsing this deserves to know.
       tinCupNote: cfg.isPlaceholder
         ? "payTo is the zero address. This endpoint cannot settle. Do not send funds."
-        : "testnet-shaped configuration",
+        : cfg.settlementReady
+          ? "Settles through the Coinbase CDP facilitator and is credited to a public ledger at /ledger.json."
+          : "payTo is real but no facilitator is configured, so nothing can settle. A payment sent here is recorded as an offer and credited nothing.",
     },
   };
 }
@@ -184,17 +196,27 @@ export function checkPaymentHeader(
   };
 }
 
-/** The `X-PAYMENT-RESPONSE` header value, base64 JSON, same as the standard. */
-export function paymentResponseHeader(payer: string | null, network: string): string {
+/**
+ * The `X-PAYMENT-RESPONSE` header value, base64 JSON, same as the standard.
+ *
+ * With a transaction hash it is a receipt. Without one it says so in the same
+ * breath — `settled: false` and a note, rather than a `success: true` that a
+ * client could read as money having moved. The machine reading this header is
+ * deciding whether it got what it paid for, and it is owed the difference.
+ */
+export function paymentResponseHeader(
+  payer: string | null,
+  network: string,
+  transaction: string | null = null,
+): string {
   return btoa(
     JSON.stringify({
       success: true,
-      transaction: null,
+      transaction,
       network,
       payer,
-      // Honest about what this is. A settled payment would carry a tx hash here.
-      settled: false,
-      note: "accepted locally, not settled on chain",
+      settled: Boolean(transaction),
+      ...(transaction ? {} : { note: "accepted locally, not settled on chain" }),
     }),
   );
 }

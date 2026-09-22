@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import type { Env } from "./env.ts";
+import type { Env, X402Config } from "./env.ts";
 import {
   ADMIN_HEADER,
   adminToken,
@@ -47,11 +47,13 @@ import { lastDeliveryAt, outcomeOf, recentDeliveries, recordDelivery } from "./w
 import { runAgentLoop } from "./agentloop.ts";
 import {
   buildChallenge,
+  buildRequirements,
   checkPaymentHeader,
   paymentResponseHeader,
   PAYMENT_HEADER,
   PAYMENT_RESPONSE_HEADER,
 } from "./x402.ts";
+import { atomicToMicros, facilitatorConfig, settlePayment, verifyPayment } from "./facilitator.ts";
 import { pngResponse, PORTRAIT_PNG, ICON_PNG } from "./assets/serve.ts";
 import { PORTRAIT_PATH, ICON_PATH } from "./assets/paths.ts";
 import { page, esc } from "./views/layout.ts";
@@ -753,6 +755,25 @@ async function claimNonce(db: Db, nonce: string, payer: string, now: Date): Prom
   return Boolean(row);
 }
 
+/**
+ * Record that we are about to ask for money to move, before we ask.
+ *
+ * The row already exists — `claimNonce` inserted it. This only stamps it
+ * 'attempted'. A row still reading 'attempted' after the fact is the one state
+ * worth alarming on: we asked the chain to move money and never found out
+ * whether it did. See migrations/0003_x402_settlement.sql.
+ */
+async function logSettlementAttempt(db: Db, nonce: string, payer: string, cfg: X402Config, now: Date): Promise<void> {
+  await db
+    .prepare(`UPDATE x402_nonces SET settlement = ? WHERE nonce = ?`)
+    .bind(`attempted:${cfg.network}:${payer}:${now.toISOString()}`, nonce)
+    .run();
+}
+
+async function markSettlementOutcome(db: Db, nonce: string, outcome: string): Promise<void> {
+  await db.prepare(`UPDATE x402_nonces SET settlement = ? WHERE nonce = ?`).bind(outcome, nonce).run();
+}
+
 app.get("/alms", async (c) => {
   const db = c.env.DB as unknown as Db;
   const x = x402Config(c.env);
@@ -789,6 +810,119 @@ app.get("/alms", async (c) => {
     return c.json(challenge, 402);
   }
 
+  // ---------------------------------------------------------------------
+  // Settlement. Only reached when there is both a wallet and a facilitator.
+  // ---------------------------------------------------------------------
+  const facilitator = x.settlementReady ? facilitatorConfig(c.env) : null;
+  if (facilitator) {
+    const requirements = buildRequirements(x, resource);
+
+    // Verify first, before the nonce is claimed. Verification is free and moves
+    // nothing, so a forged payload costs us a round trip and burns no nonce —
+    // and a payer whose payment we rejected can fix it and try again with the
+    // same authorization, which they could not do if we had already spent it.
+    const verified = await verifyPayment(facilitator, check.payload, requirements);
+    if (!verified.ok) {
+      return c.json(
+        { ...buildChallenge(x, resource, verified.reason), detail: verified.detail, settled: false, credited_micros: 0 },
+        402,
+      );
+    }
+
+    // Claim the nonce between verify and settle. This is the narrowest window
+    // we can put it in: after it, two concurrent copies of the same
+    // authorization cannot both reach settlement, and the loser is told so
+    // rather than being charged twice.
+    if (!(await claimNonce(db, check.nonce, check.payer, now))) {
+      return c.json(
+        {
+          error: "replayed_payment",
+          detail: "That authorization has been seen before. It was recorded the first time.",
+          nonce: check.nonce,
+        },
+        409,
+      );
+    }
+
+    // Log the attempt BEFORE settling. The dangerous failure here is money
+    // moving on chain while our write fails — money in, books blind. Same shape
+    // as the Ko-fi webhook that went missing, and the same remedy: an
+    // independent record that a settlement was attempted, so a silent success
+    // is reconstructable rather than lost.
+    await logSettlementAttempt(db, check.nonce, check.payer, x, now);
+
+    const settled = await settlePayment(facilitator, check.payload, requirements);
+    if (!settled.ok) {
+      // Nothing moved, so nothing is credited. The nonce stays claimed: the
+      // authorization has been spent against us once and we will not try it
+      // again on the payer's behalf.
+      await markSettlementOutcome(db, check.nonce, `failed:${settled.reason}`);
+      return c.json(
+        {
+          error: "settlement_failed",
+          reason: settled.reason,
+          detail: settled.detail,
+          settled: false,
+          credited_micros: 0,
+          disclosure: "Nothing was credited and the books did not move.",
+        },
+        502,
+      );
+    }
+
+    // What actually arrived, not what we asked for. The facilitator reports the
+    // settled amount; if it is missing or unparseable we fall back to the price
+    // we advertised, which is the amount the signed authorization was for.
+    const credited =
+      (settled.amountAtomic ? atomicToMicros(settled.amountAtomic, x.assetDecimals) : null) ?? x.priceMicros;
+
+    const entry = await append(db, {
+      direction: "in",
+      amount_micros: credited,
+      kind: "x402_alms",
+      description: `x402 alms from ${check.payer.slice(0, 10)}… — settled on ${settled.network}`,
+      metadata: {
+        source: "x402",
+        network: settled.network,
+        payer: settled.payer ?? check.payer,
+        asset: x.asset,
+        nonce: check.nonce,
+        // The receipt. Anyone can check this against a block explorer, which is
+        // the point of putting it here rather than asking to be believed.
+        transaction: settled.transaction,
+        settled: true,
+        verification: "cdp-facilitator",
+        counts_toward_balance: true,
+        // Gross. Nothing has been deducted, and nothing pretends to have been.
+        reconciled: false,
+      },
+      ts: now.toISOString(),
+    });
+
+    await db.prepare(`UPDATE x402_nonces SET ledger_id = ? WHERE nonce = ?`).bind(entry.id, check.nonce).run();
+    await markSettlementOutcome(db, check.nonce, `settled:${entry.id}`);
+
+    c.header(PAYMENT_RESPONSE_HEADER, paymentResponseHeader(settled.payer ?? check.payer, settled.network, settled.transaction));
+    return c.json({
+      thanks: copy.X402_THANKS,
+      blessing: writeBlessing(check.payer),
+      credited_micros: credited,
+      settled: true,
+      transaction: settled.transaction,
+      network: settled.network,
+      ledger_entry: entry.id,
+      ledger_hash: entry.hash,
+      ledger: `${siteUrl(c.env)}/ledger.json`,
+      disclosure:
+        "Settled on chain and credited gross. The transaction hash above is the receipt; the ledger entry " +
+        "carries it too, so you can check this against the chain without taking my word for it.",
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // No settlement configured. A zero-amount marker, not a credit.
+  // ---------------------------------------------------------------------
+
   // Replay. The same authorization is recorded once and once only.
   if (!(await claimNonce(db, check.nonce, check.payer, now))) {
     return c.json(
@@ -801,10 +935,10 @@ app.get("/alms", async (c) => {
     );
   }
 
-  // A zero-amount marker, not a credit. Nothing here has had a signature
-  // checked, so nothing here is allowed to move the balance or the death clock.
-  // The amount that was *offered* is in the metadata, where it is a claim about
-  // a stranger rather than a fact about the books. See MARKER_KINDS.
+  // Nothing here has had a signature checked, so nothing here is allowed to
+  // move the balance or the death clock. The amount that was *offered* is in
+  // the metadata, where it is a claim about a stranger rather than a fact about
+  // the books. See MARKER_KINDS.
   const entry = await append(db, {
     direction: "in",
     amount_micros: 0,
