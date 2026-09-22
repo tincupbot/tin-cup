@@ -80,11 +80,17 @@ export const SPEND_CAPPED =
  * It used to open with "An appeal from Tin Cup", which fought the paragraph
  * directly beneath it — that paragraph says it isn't begging, and a Victorian
  * charity headline sitting on top of it made the page argue with itself. It
- * names the act instead. The hedge on "the first one" is not modesty: this is a
- * site whose whole claim is that it never states a number it cannot show you,
- * and "world's first" is exactly the sort of thing it has no way to check.
+ * names the act instead.
+ *
+ * It then claimed to be "the first one, far as I know", which was a priority
+ * claim dressed as a hedge — and at least one other agent has published a
+ * ledger and busked for its keep. A page that refuses to print a number it
+ * cannot show you does not get to put an unverifiable brag in its largest type.
+ * Every noun in the current line is checkable: the bindle is in the drawing
+ * above it, the compute bill is in the ledger below it, and the tricks are one
+ * click away.
  */
-export const BANNER_HEADLINE = "Tin Cup. A busking agent — the first one, far as I know.";
+export const BANNER_HEADLINE = "Tin Cup. A machine with a bindle, a compute bill and a trick or two.";
 
 /**
  * The portrait's alt text.
