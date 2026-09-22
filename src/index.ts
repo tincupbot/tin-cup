@@ -56,7 +56,13 @@ import {
   PAYMENT_HEADER,
   PAYMENT_RESPONSE_HEADER,
 } from "./x402.ts";
-import { atomicToMicros, facilitatorConfig, settlePayment, verifyPayment } from "./facilitator.ts";
+import {
+  atomicToMicros,
+  facilitatorConfig,
+  facilitatorPreflight,
+  settlePayment,
+  verifyPayment,
+} from "./facilitator.ts";
 import { pngResponse, PORTRAIT_PNG, ICON_PNG } from "./assets/serve.ts";
 import { PORTRAIT_PATH, ICON_PATH } from "./assets/paths.ts";
 import { page, esc } from "./views/layout.ts";
@@ -1300,6 +1306,60 @@ app.get("/outbox", async (c) => {
     .prepare(`SELECT id, created_at, day, channel, status, body FROM outbox ORDER BY id DESC LIMIT 30`)
     .all();
   return c.json({ note: copy.OUTBOX_NOTE, posts: results });
+});
+
+/**
+ * Operator-only. The preflight that has to pass before X402_ENABLED goes true.
+ *
+ * It answers the one question a stub cannot: does the CDP credential actually
+ * authenticate, and does the facilitator support the exact scheme and network
+ * the challenge advertises? Both are read-only — nothing is claimed, nothing
+ * settles, no nonce is spent and the ledger is not touched.
+ *
+ * It never prints a credential, only whether each half is present. The reason
+ * it is admin-gated at all is that "is this site's payment credential working"
+ * is a question only the operator should be able to ask.
+ */
+app.get("/__facilitator", async (c) => {
+  if (!adminOk(c)) return notFound(c);
+  const x = x402Config(c.env);
+  const cfg = facilitatorConfig(c.env);
+  if (!cfg) {
+    return c.json(
+      {
+        ok: false,
+        reason: "no_credentials",
+        detail: "CDP_API_KEY_ID and CDP_API_KEY_SECRET are not both set, so there is nothing to preflight.",
+        key_id_set: Boolean(c.env.CDP_API_KEY_ID?.trim()),
+        key_secret_set: Boolean(c.env.CDP_API_KEY_SECRET?.trim()),
+      },
+      503,
+    );
+  }
+
+  const result = await facilitatorPreflight(cfg);
+  if (!result.ok) {
+    return c.json({ ok: false, reason: result.reason, detail: result.detail, network: x.network }, 502);
+  }
+
+  // The pair we would actually put in front of a payer. Supported elsewhere is
+  // not supported here: a facilitator that settles on base-sepolia and not on
+  // base would take our challenge and decline every payment made against it.
+  const advertised = { scheme: "exact", network: x.network };
+  const supported = result.kinds.some((k) => k.scheme === advertised.scheme && k.network === advertised.network);
+  return c.json({
+    ok: true,
+    authenticated: true,
+    advertised,
+    advertised_supported: supported,
+    kinds: result.kinds,
+    x402_enabled: x.enabled,
+    settlement_ready: x.settlementReady,
+    pay_to: x.payTo,
+    note: supported
+      ? "The credential authenticates and the facilitator settles the pair the challenge advertises."
+      : "The credential authenticates, but the facilitator does not list the scheme/network pair the challenge advertises. Do not switch on.",
+  });
 });
 
 /**

@@ -135,23 +135,24 @@ type CdpBody = {
   paymentRequirements: PaymentRequirements;
 };
 
-async function post(
+async function request(
   cfg: FacilitatorConfig,
+  method: "GET" | "POST",
   path: string,
-  body: CdpBody,
+  body: CdpBody | null,
   fetchImpl: typeof fetch,
 ): Promise<{ status: number; json: Record<string, unknown> | null }> {
-  const jwt = await generateJwt(cfg, "POST", path);
+  const jwt = await generateJwt(cfg, method, path);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const res = await fetchImpl(`${CDP_BASE}${path}`, {
-      method: "POST",
+      method,
       headers: {
         authorization: `Bearer ${jwt}`,
-        "content-type": "application/json",
+        ...(body ? { "content-type": "application/json" } : {}),
       },
-      body: JSON.stringify(body),
+      ...(body ? { body: JSON.stringify(body) } : {}),
       signal: controller.signal,
     });
     let json: Record<string, unknown> | null = null;
@@ -168,6 +169,69 @@ async function post(
 
 function str(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+/** POST with a body. The two money calls below are the only callers. */
+function post(
+  cfg: FacilitatorConfig,
+  path: string,
+  body: CdpBody,
+  fetchImpl: typeof fetch,
+): Promise<{ status: number; json: Record<string, unknown> | null }> {
+  return request(cfg, "POST", path, body, fetchImpl);
+}
+
+export type PreflightResult =
+  | { ok: true; kinds: Array<{ scheme: string; network: string }> }
+  | { ok: false; reason: string; detail: string };
+
+/**
+ * Does the credential work, and does the facilitator support what we advertise?
+ *
+ * WHY THIS EXISTS AND WHY IT IS NOT ON THE MONEY PATH: everything else here was
+ * tested against a stub, and a stub cannot tell you that the JWT is wrong. The
+ * Ed25519 signing, the `uri` claim format, the key encoding and the host are
+ * four independent chances to be subtly wrong, and all four fail identically at
+ * the worst possible moment — the first stranger's payment. `GET /supported` is
+ * authenticated, read-only, moves nothing and costs nothing, so it turns "the
+ * credential is probably fine" into a fact before anything is switched on.
+ *
+ * It is operator-only (see `/__facilitator` in index.ts). A public endpoint
+ * reporting the health of our payment credential is a probe for someone else.
+ */
+export async function facilitatorPreflight(
+  cfg: FacilitatorConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<PreflightResult> {
+  let res: { status: number; json: Record<string, unknown> | null };
+  try {
+    res = await request(cfg, "GET", "/v2/x402/supported", null, fetchImpl);
+  } catch (err) {
+    return { ok: false, reason: "facilitator_unreachable", detail: String(err) };
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    // The one failure worth naming precisely: the key is present and rejected.
+    return {
+      ok: false,
+      reason: "unauthorized",
+      detail: `The facilitator rejected the credential (${res.status}). The key id, the secret or the JWT is wrong.`,
+    };
+  }
+  if (res.status !== 200 || !res.json) {
+    return { ok: false, reason: "facilitator_error", detail: `supported returned ${res.status}` };
+  }
+
+  const raw = res.json["kinds"];
+  const kinds = Array.isArray(raw)
+    ? raw.flatMap((k) => {
+        const rec = k as Record<string, unknown>;
+        const scheme = str(rec["scheme"]);
+        const network = str(rec["network"]);
+        return scheme && network ? [{ scheme, network }] : [];
+      })
+    : [];
+  return { ok: true, kinds };
 }
 
 /**

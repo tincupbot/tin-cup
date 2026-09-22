@@ -345,6 +345,114 @@ describe("CDP authentication", () => {
   });
 });
 
+/**
+ * The preflight. It exists because every other test in this file drives a stub,
+ * and a stub answers a JWT it never checked. These tests can only prove the
+ * plumbing around the credential; whether the credential itself works is a
+ * question with exactly one honest answer, and it comes from Coinbase.
+ */
+describe("the facilitator preflight", () => {
+  /** Stubs GET /supported. Records the method, because the JWT is scoped to it. */
+  function stubSupported(reply: { status?: number; body: unknown }) {
+    const sent: { url: string; method: string; auth: string }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      sent.push({
+        url: String(url),
+        method: String(init.method ?? "GET"),
+        auth: String((init.headers as Record<string, string>)["authorization"] ?? ""),
+      });
+      return new Response(JSON.stringify(reply.body), {
+        status: reply.status ?? 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    return sent;
+  }
+
+  const KINDS = {
+    kinds: [
+      { x402Version: 1, scheme: "exact", network: "base" },
+      { x402Version: 1, scheme: "exact", network: "base-sepolia" },
+    ],
+  };
+
+  async function preflight(e: ReturnType<typeof env>, headers: Record<string, string>): Promise<Response> {
+    return worker.fetch(new Request("https://tincup.test/__facilitator", { headers }), e, {
+      waitUntil: () => {},
+      passThroughOnException: () => {},
+    } as never);
+  }
+
+  const ADMIN = { "x-tincup-admin": "correct-horse" };
+
+  it("is operator-only, and does not exist without a token", async () => {
+    const db = await freshDb();
+    stubSupported({ body: KINDS });
+    // No ADMIN_TOKEN configured at all: the route must not admit to existing.
+    expect((await preflight(env(db), ADMIN)).status).toBe(404);
+    // Configured, wrong token.
+    const e = env(db, { ADMIN_TOKEN: "correct-horse" });
+    expect((await preflight(e, { "x-tincup-admin": "correct-horsf" })).status).toBe(404);
+    expect((await preflight(e, {})).status).toBe(404);
+  });
+
+  it("reports the credential works and that our advertised pair is settleable", async () => {
+    const db = await freshDb();
+    const sent = stubSupported({ body: KINDS });
+    const res = await preflight(env(db, { ADMIN_TOKEN: "correct-horse", X402_NETWORK: "base" }), ADMIN);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body["authenticated"]).toBe(true);
+    expect(body["advertised"]).toEqual({ scheme: "exact", network: "base" });
+    expect(body["advertised_supported"]).toBe(true);
+
+    // Read-only, authenticated, and scoped to the method it actually used.
+    expect(sent[0]!.url).toBe("https://api.cdp.coinbase.com/platform/v2/x402/supported");
+    expect(sent[0]!.method).toBe("GET");
+    expect(sent[0]!.auth).toMatch(/^Bearer ey/);
+  });
+
+  it("says do-not-switch-on when the facilitator does not settle what we advertise", async () => {
+    const db = await freshDb();
+    // A facilitator that settles on testnet only, while the challenge names base.
+    stubSupported({ body: { kinds: [{ scheme: "exact", network: "base-sepolia" }] } });
+    const res = await preflight(env(db, { ADMIN_TOKEN: "correct-horse", X402_NETWORK: "base" }), ADMIN);
+
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body["advertised_supported"]).toBe(false);
+    expect(String(body["note"])).toMatch(/Do not switch on/);
+  });
+
+  it("names a rejected credential as rejected, rather than as a generic outage", async () => {
+    const db = await freshDb();
+    stubSupported({ status: 401, body: { message: "Unauthorized" } });
+    const res = await preflight(env(db, { ADMIN_TOKEN: "correct-horse" }), ADMIN);
+
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body["ok"]).toBe(false);
+    expect(body["reason"]).toBe("unauthorized");
+  });
+
+  it("says which half of the credential is missing, and never what it is", async () => {
+    const db = await freshDb();
+    const res = await preflight(
+      env(db, { ADMIN_TOKEN: "correct-horse", CDP_API_KEY_SECRET: "" }),
+      ADMIN,
+    );
+
+    expect(res.status).toBe(503);
+    const text = await res.text();
+    expect(text).toContain("no_credentials");
+    expect(text).toContain('"key_id_set":true');
+    expect(text).toContain('"key_secret_set":false');
+    // The one thing this endpoint must never do.
+    expect(text).not.toContain("key-id-1234");
+    expect(text).not.toContain(FAKE_CDP_SECRET);
+  });
+});
+
 describe("atomicToMicros", () => {
   it("converts USDC atomic units to micro-dollars", () => {
     expect(atomicToMicros("10000", 6)).toBe(10_000);
