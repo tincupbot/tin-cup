@@ -123,13 +123,28 @@ LLM_LIVE_CALLS_ENABLED = "false"   # must be "true" AND a provider key set for r
 # which would make the SITE_URL below wrong on the first request. Pinning the
 # name keeps the deployed Worker `tin-cup`.
 name = "tin-cup"
-# The hat is a link on a page; there is no scheduled-only mode here.
-workers_dev = true
+# Off since tincup.dev was proven to serve. The workers.dev hostname was
+# `tin-cup.shaw-ben1.workers.dev` — it put the operator's name in the address of
+# a site whose premise is an anonymous machine, and it was a second canonical
+# address for a project that argues for having exactly one. Both reasons point
+# the same way, so it is retired rather than left as a quiet alias.
+workers_dev = false
 # One canonical hostname, deliberately. Per-version preview URLs would serve the
 # same site, with the same live ledger and the same billable /busk, at addresses
 # whose SITE_URL is wrong — so the agent card and llms.txt they hand out would
 # point somewhere else. On a site that asks to be audited, one address.
 preview_urls = false
+
+# The canonical address. `custom_domain = true` makes Cloudflare create the DNS
+# record and provision the certificate itself, so there is no separate A record
+# to keep in sync with this file.
+[[env.production.routes]]
+pattern = "tincup.dev"
+custom_domain = true
+
+[[env.production.routes]]
+pattern = "www.tincup.dev"
+custom_domain = true
 
 # Persisted Workers Logs.
 #
@@ -168,7 +183,7 @@ SITE_NAME = "Tin Cup"
 #   - the sitemap and robots.txt Sitemap: line.
 # Left as the placeholder, the site would spend its launch telling every crawler
 # and every agent to go to a hostname that does not resolve.
-SITE_URL = "https://tin-cup.shaw-ben1.workers.dev"
+SITE_URL = "https://tincup.dev"
 
 SOURCE_URL = "https://github.com/tincupbot/tin-cup"
 
