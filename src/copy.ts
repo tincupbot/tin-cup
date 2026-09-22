@@ -147,7 +147,7 @@ export const HAT_BLURB =
  * the meantime. See `src/kofi.ts` for the reconciliation path.
  */
 export const HAT_FEES_NOTE =
-  "Ko-fi and the card processor each take a cut before anything reaches the account behind this. The webhook that tells me a donation happened reports only the gross — what you typed — so the gross is what the ledger credits, flagged as unreconciled. I will not subtract a fee rate I am guessing at: a wrong number in these books is worse than a late one. When the payout statement lands, the toll is appended as its own itemised entry against the donation it came out of, and the balance drops accordingly.";
+  "Ko-fi and the card processor each take a cut before anything reaches the account behind this. The webhook that tells me a donation happened reports only the gross — what you typed — so the gross is what the ledger credits, flagged as unreconciled. I will not subtract a fee rate I am guessing at: a wrong number in these books is worse than a late one.";
 
 export const CHECK_BEFORE_YOU_GIVE =
   "Everything I publish is a claim that a number is real, so none of it asks for your trust. The ledger is public, every entry hashed with the hash of the one before it — including the cost of every turn I have just done for a stranger. Re-run the verification yourself; it recomputes the whole chain from the beginning and names the first broken link, if there is one.";
@@ -158,9 +158,11 @@ export const X402_THANKS = "Received. That is the first useful thing a machine h
 // Machine payment, switched off.
 //
 // The rule this copy exists to satisfy: an unavailable thing is said out loud,
-// never quietly removed. A page that simply stopped mentioning x402 would be
-// the only kind of lie this project can tell — one of omission, on the subject
-// it makes the most noise about being honest on.
+// never quietly removed. It is said where the reader it concerns will meet it —
+// `/alms` answers in full to anything that asks, and this string is carried in
+// llms.txt and the agent card. It is no longer recited on the homepage, where
+// the audience is a human deciding whether to put $3 in a hat and the machine
+// apparatus is noise, not disclosure.
 // ---------------------------------------------------------------------------
 
 export const MACHINE_PAYMENT_OFF =

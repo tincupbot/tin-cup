@@ -349,15 +349,16 @@ function cupBlock(data: HomeData): string {
 
   const threeDollarsNeeded = Math.max(1, Math.ceil((burn * 100 - data.clock.balance_micros) / 3_000_000));
 
-  // Three states, and the disabled one is written out rather than dropped. A
-  // page that silently stopped mentioning x402 would be hiding the only thing
-  // here it has ever been tempted to hide.
+  // Two states worth saying on the homepage. When x402 is off entirely this
+  // says nothing here: a human reading the hat does not need the machine-payment
+  // apparatus explained to them. The disclosure still exists where it matters —
+  // `/alms` answers in full, and `MACHINE_PAYMENT_OFF` is carried in llms.txt
+  // and the agent card, which is what a machine actually reads.
   const machine = data.x402.enabled
     ? data.x402.placeholder
       ? `Machines can try at <a href="/alms">/alms</a> over x402. The wallet address there is the zero address, so nothing can settle and nothing is credited &mdash; the endpoint exists so the shape is testable and so I can count who reads it.`
       : `Machines can pay at <a href="/alms">/alms</a> over x402, ${esc(formatUsdPrecise(data.x402.priceMicros))} on ${esc(data.x402.network)}.`
-    : `${esc(copy.MACHINE_PAYMENT_OFF)} <a href="/alms">/alms</a> says the same thing to anything that asks it, and
-       <a href="/passers-by">the counter</a> is still running.`;
+    : "";
 
   return `
 <section class="cup" id="cup">

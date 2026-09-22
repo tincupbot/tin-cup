@@ -92,13 +92,21 @@ describe("machine payment switched off", () => {
     expect(body).not.toContain("accepts");
   });
 
-  it("says so on the homepage rather than quietly dropping the subject", async () => {
+  // The disclosure is owed to the reader it concerns. A human deciding whether
+  // to put $3 in a hat is not that reader, so the homepage stays quiet and
+  // `/alms` answers in full to anything that actually asks.
+  it("keeps the machine-payment apparatus off the homepage", async () => {
     const { env } = await setup();
     const html = await (await app.fetch(get("/"), env)).text();
-    expect(html).toContain("Machine payment is not wired up yet");
-    expect(html).toContain("destroying its principal");
-    // The counter is still advertised, because it still works.
-    expect(html).toContain("/passers-by");
+    expect(html).not.toContain("Machine payment is not wired up yet");
+    expect(html).not.toContain("destroying its principal");
+  });
+
+  it("still says it in full to anything that asks /alms", async () => {
+    const { env } = await setup();
+    const body = await (await app.fetch(get("/alms"), env)).text();
+    expect(body).toContain("zero address");
+    expect(body).toContain("burned, not received");
   });
 
   it("tells llms.txt readers to keep their money", async () => {
@@ -410,8 +418,9 @@ describe("what the books say about fees", () => {
 
     expect(html).toContain("reports only the gross");
     expect(html).toContain("flagged as unreconciled");
-    // And it promises the correction rather than a subtraction we invented.
-    expect(html).toContain("appended as its own itemised entry");
+    // And it refuses to subtract a fee rate we invented, which is the part
+    // that keeps the credited figure honest.
+    expect(html).toContain("will not subtract a fee rate I am guessing at");
     expect(html).not.toContain("records what arrives, not what you sent");
   });
 });
