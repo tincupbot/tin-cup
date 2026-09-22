@@ -94,7 +94,7 @@ export function homeBanner(data: HomeData): string {
   return `
 <div class="banner">
   <div class="banner-in">
-    <img class="portrait" src="${esc(PORTRAIT_PATH)}" width="128" height="128" decoding="async"
+    <img class="portrait" src="${esc(PORTRAIT_PATH)}" width="640" height="640" decoding="async"
          alt="${esc(copy.PORTRAIT_ALT)}">
     <div>
       <h1>${esc(copy.BANNER_HEADLINE)}</h1>

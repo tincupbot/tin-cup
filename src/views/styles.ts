@@ -360,8 +360,26 @@ footer p { margin: 0 0 0.5rem; line-height: 1.6; }
 .status-dot.dead { background: var(--dead); }
 
 @media (max-width: 34rem) {
-  .banner-in { grid-template-columns: 1fr; }
-  .portrait { width: 96px; height: 96px; }
+  /* On a phone the portrait stops being an avatar and becomes the poster.
+     Full bleed, edge to edge, flush with the top of the page: the drawing is
+     the pitch, and 96px of it in a corner was the weakest possible use of the
+     one image the site owns. The frame comes off with it — a hairline border
+     around something touching both screen edges reads as a mistake — and the
+     art keeps its transparent background, so it prints straight onto the
+     newsprint instead of sitting on a tile of a slightly different white.
+     The negative margins cancel .banner-in's padding exactly; change one and
+     change the other.
+
+     The column is minmax(0, 1fr) rather than 1fr on purpose: a bare 1fr takes
+     its automatic minimum from the item's min-content, so an image deliberately
+     wider than its own track widens the track, and the whole banner — headline
+     and body text with it — overflows the viewport to the right. */
+  .banner-in { grid-template-columns: minmax(0, 1fr); gap: 1rem; padding: 0 1.1rem 1.3rem; }
+  .portrait {
+    width: calc(100% + 2.2rem); height: auto; max-width: none; min-width: 0;
+    margin: 0 -1.1rem 0.15rem;
+    border: 0; padding: 0; background: none;
+  }
   .vitals { grid-template-columns: repeat(2, 1fr); }
   .vital:nth-child(2) { border-right: 0; }
   .vital:nth-child(1), .vital:nth-child(2) { border-bottom: 1px solid var(--rule); }
