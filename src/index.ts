@@ -121,6 +121,14 @@ function edgeVerifiedBot(req: Request): boolean {
  * skips 404s entirely — a misspelled URL from a crawler used to cost two
  * database writes, which is a way to be DDoSed by typos. See `logPasserBy` for
  * what is aggregated versus what is sampled.
+ *
+ * The write is deliberately swallowed on failure. This runs in global
+ * middleware on a response the handler has already built, so an unguarded
+ * throw here turns a rendered page into a 500 — the counter would be able to
+ * take the whole site down with it. The counter is a nice-to-have; the page
+ * and the books are not. Losing a row is the cheaper failure, and an
+ * undercounted passers-by total is honest in the direction that costs us
+ * nothing: it can only ever understate the crowd.
  */
 app.use("*", async (c, next) => {
   await next();
@@ -130,13 +138,17 @@ app.use("*", async (c, next) => {
   // product is that its numbers can be checked.
   if (IMAGE_PATHS.has(new URL(c.req.url).pathname)) return;
   const paid = c.res.headers.get("x-tincup-paid") === "1";
-  await logPasserBy(c.env.DB as unknown as Db, {
-    path: new URL(c.req.url).pathname,
-    ua: c.req.header("user-agent"),
-    paid,
-    verified: edgeVerifiedBot(c.req.raw),
-    rawSampleOneIn: passersbySampleOneIn(c.env),
-  });
+  try {
+    await logPasserBy(c.env.DB as unknown as Db, {
+      path: new URL(c.req.url).pathname,
+      ua: c.req.header("user-agent"),
+      paid,
+      verified: edgeVerifiedBot(c.req.raw),
+      rawSampleOneIn: passersbySampleOneIn(c.env),
+    });
+  } catch (err) {
+    console.error("passer-by log failed", err);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -165,6 +177,7 @@ async function shell(
     banner,
     aboveFold,
     alive,
+    source: sourceUrl(c.env),
     contact: c.env.OPERATOR_CONTACT ?? "not set",
   });
 }
@@ -1035,6 +1048,7 @@ function notFound(c: Context<Ctx>) {
       description: "404",
       siteUrl: siteUrl(c.env),
       alive: true,
+      source: sourceUrl(c.env),
       contact: c.env.OPERATOR_CONTACT ?? "not set",
       body: `<header class="masthead"><h1>Nothing here</h1></header>
 <p class="sub">${esc("You have found an empty doorway. There is only one page and it is that way.")}</p>
@@ -1069,6 +1083,7 @@ app.onError((err, c) => {
       description: "500",
       siteUrl: siteUrl(c.env),
       alive: true,
+      source: sourceUrl(c.env),
       contact: c.env.OPERATOR_CONTACT ?? "not set",
       body: `<header class="masthead"><h1>Something broke</h1></header>
 <p class="sub">${esc(detail)}</p>

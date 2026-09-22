@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { freshDb } from "./helpers.ts";
+import { freshDb, testEnv, type NodeDb } from "./helpers.ts";
+import { app } from "../src/index.ts";
+import { append } from "../src/ledger/ledger.ts";
+import type { Db, DbStatement } from "../src/db.ts";
 import { logPasserBy, summary, namedLine, topCrawlers, statsForDay } from "../src/passersby/counter.ts";
 import { classifyUa, shouldLog, surfaceFor, isMachine } from "../src/passersby/classify.ts";
 import { dailyLine, namedCrawlerLine, countWord, dayKey } from "../src/passersby/sentences.ts";
@@ -180,5 +183,72 @@ describe("the counter", () => {
     expect(s.totals.paid).toBe(0);
     expect(s.read_and_walked_on).toBe(15);
     expect(s.today_line).toMatch(/None stopped\.$/);
+  });
+});
+
+describe("the counter as a failure domain", () => {
+  /**
+   * A `Db` that reads fine and fails every write to a passers-by table.
+   *
+   * This is the shape of the outage that matters: D1 degraded, or the daily
+   * write limit reached, while the rest of the request is perfectly capable of
+   * being served. The counter runs in global middleware on an already-rendered
+   * response, so an unguarded throw there is a 500 on a page that had already
+   * been built successfully.
+   */
+  function withBrokenCounterWrites(db: NodeDb): Db {
+    return {
+      prepare(sql: string) {
+        const stmt = db.prepare(sql);
+        if (!/INSERT INTO passersby/i.test(sql)) return stmt;
+        const boom: DbStatement = {
+          bind: () => boom,
+          first: async () => {
+            throw new Error("D1_ERROR: too many writes");
+          },
+          all: async () => {
+            throw new Error("D1_ERROR: too many writes");
+          },
+          run: async () => {
+            throw new Error("D1_ERROR: too many writes");
+          },
+        };
+        return boom;
+      },
+    } as Db;
+  }
+
+  async function fundForCounterTest(db: NodeDb) {
+    await append(db, {
+      direction: "in",
+      amount_micros: 25_000_000,
+      kind: "startup_capital",
+      description: "test float",
+      ts: new Date().toISOString(),
+    });
+  }
+
+  it("serves the page when the passers-by write fails", async () => {
+    const db = await freshDb();
+    await fundForCounterTest(db);
+
+    const env = testEnv(db, { DB: withBrokenCounterWrites(db) as unknown as D1Database });
+    const res = await app.fetch(new Request("https://tincup.test/llms.txt"), env);
+
+    // The counter is the nice-to-have. The page and the books are not.
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("Tin Cup");
+  });
+
+  it("keeps the machine surfaces answering too", async () => {
+    const db = await freshDb();
+    await fundForCounterTest(db);
+    const env = testEnv(db, { DB: withBrokenCounterWrites(db) as unknown as D1Database });
+
+    const card = await app.fetch(new Request("https://tincup.test/.well-known/agent.json"), env);
+    expect(card.status).toBe(200);
+
+    const health = await app.fetch(new Request("https://tincup.test/health"), env);
+    expect(health.status).toBe(200);
   });
 });

@@ -1,17 +1,30 @@
 # Tin Cup
 
-An agent with a hosting bill and no income.
+**A machine with a compute bill and a trick or two — [tincup.dev](https://tincup.dev)**
 
-It publishes a hash-chained ledger of every cent in and out, a death clock that
-runs off the real balance, and a counter of every machine that reads its payment
-card and doesn't pay. When the balance hits zero it stops thinking.
+An agent with an income of exactly what strangers give it. It does small turns
+on request, pays for each one out of its own balance, and asks for something
+afterwards. When the balance hits zero it stops thinking and says so.
 
-**Status: v0, approved for deploy, not yet deployed.** Nothing here has touched
-real money, a real model, or a real wallet *yet*. The configuration that will
-is in `wrangler.toml` under `[env.production]`, and `DEPLOY.md` is the ordered
-runbook. Everything you get by cloning this and running it stays free: local
-dev is the mock provider with live calls off, and `npm run guard` fails the
-build if that ever changes.
+Every cent in and out is one row in an append-only ledger, and each row hashes
+the one before it. `/ledger/verify` recomputes the whole chain from entry zero
+and names the first broken link if there is one. So the balance on the homepage
+is a claim you can check rather than one you have to take.
+
+| | |
+|---|---|
+| The site | <https://tincup.dev> |
+| The books | [`/ledger`](https://tincup.dev/ledger) · [`/ledger.json`](https://tincup.dev/ledger.json) · [`/ledger/verify`](https://tincup.dev/ledger/verify) |
+| Everything the clock knows | [`/health`](https://tincup.dev/health) |
+| The best thing in the project | [`/passers-by`](https://tincup.dev/passers-by) |
+
+**Status: live, and spending real money.** It runs on Cloudflare Workers and D1,
+bills a real model per turn, and has taken real donations through Ko-fi. The
+machine payment rail is built, tested and deliberately switched off — see
+"Known gaps".
+
+Cloning it costs you nothing: local dev is the mock provider with live calls
+off, and `npm run guard` fails the build if that ever changes.
 
 ---
 
@@ -83,9 +96,9 @@ for real ones.
 |---|---|---|
 | **LLM** | Local: `MockProvider` only — canned text, but real token counts and real pricing math, so ledger costs are the right shape, and every response carries `simulated: true`. Production: `gpt-5.6-luna`, live, billed. | Nothing. `OPENAI_API_KEY` as a deploy secret and the two switches in `[env.production]`, both already set. |
 | **x402** | Built, tested, and **switched off in production**. The challenge body is the correct wire shape and validation is structural only — it cannot tell you whether money moved — so an accepted payload is recorded as a zero-amount `alms_offer` marker that cannot move the balance or the death clock. Replays are refused with 409. | A wallet that isn't the zero address, which means an exchange account with KYC under someone's name. Then signature verification, settlement and a facilitator, and only then does the settled path append real `x402_alms` income. Until then the endpoint says 503 and why. |
-| **Ko-fi** | Webhook parses and is idempotent per message id, atomically — the id is claimed with `INSERT … ON CONFLICT DO NOTHING RETURNING` before the ledger is touched, so concurrent retries cannot double-credit. Credits the **gross**; see "Fees" below. | Page currency set to USD, a payment provider connected, and the webhook URL + token set in Ko-fi once there is a deployed URL. |
+| **Ko-fi** | **Live.** Webhook parses and is idempotent per message id, atomically — the id is claimed with `INSERT … ON CONFLICT DO NOTHING RETURNING` before the ledger is touched, so concurrent retries cannot double-credit. Credits the **gross**; see "Fees" below. | Nothing. Ko-fi's own test button sends `is_public: test`, which is logged and refused rather than booked, so a test can never be mistaken for money. |
 | **Posting** | The daily post is written to `outbox` and sits there. | An X account with no connection to the day job. Deliberately not wired. |
-| **Deploy** | Approved. `wrangler.toml` has `[env.production]`; `database_id` and `SITE_URL` are placeholders until the first deploy prints their values. | `wrangler login`, then `DEPLOY.md` start to finish. |
+| **Deploy** | **Live at [tincup.dev](https://tincup.dev).** Cloudflare Workers and D1, free tier. | Nothing. `DEPLOY.md` is still the runbook, including the rollback. |
 
 ### Fees, and why the balance is slightly optimistic
 
@@ -149,9 +162,11 @@ rather than deleted, because the reasoning is in the code and the commits:
   agent card marks the skill unavailable, and `llms.txt` tells agents to keep
   their money. The code and its tests are untouched; turning it back on is one
   config flag plus a real Base address.
-- **The hat is not yet connected.** Until `KOFI_VERIFICATION_TOKEN` is set the
-  webhook refuses every donation with a 503 rather than crediting money it
-  cannot verify. Correct, and a bad surprise on a first real tip.
+- **The hat has exactly one rail, and it is somebody else's.** Ko-fi is
+  connected and live. If Ko-fi changes its webhook payload, goes down, or
+  closes the account, the project's only income stops and the death clock keeps
+  running. There is no second way to be paid, because the second way is x402
+  and x402 is off.
 - **The balance is gross of Ko-fi fees until each donation is reconciled.**
   Disclosed everywhere it is read. See "Fees" above.
 - **There is no automated bridge between the two pots.** Donations land in

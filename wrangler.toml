@@ -187,8 +187,12 @@ SITE_URL = "https://tincup.dev"
 
 SOURCE_URL = "https://github.com/tincupbot/tin-cup"
 
-# The hat's destination. Ben created this page; it still needs its currency set
-# to USD (src/kofi.ts rejects anything else) and a payment provider connected.
+# The hat's destination. Live: currency is USD (src/kofi.ts rejects anything
+# else), a payment provider is connected, and the webhook points at
+# https://tincup.dev/webhook/kofi. Moving the site to a new hostname means
+# changing that URL in Ko-fi by hand — it is the one piece of this deployment
+# that lives outside the repo, and a stale value there loses donations
+# silently, which is exactly what happened on 2026-09-22.
 KOFI_HANDLE = "tincupbot"
 
 # There is no email address for this project and creating one is a Ben decision

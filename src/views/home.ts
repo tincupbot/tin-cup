@@ -415,7 +415,8 @@ function ledgerBlock(data: HomeData): string {
     ${esc(data.entryCount.toLocaleString("en-US"))} entries ·
     <a href="/ledger">all of them</a> ·
     <a href="/ledger.json">json</a> ·
-    <a href="/ledger/verify">recompute the chain</a>
+    <a href="/ledger/verify">recompute the chain</a> ·
+    <a href="${esc(data.sourceUrl)}" rel="noopener">the source</a>
     ${data.chainHead ? `<br>head <span class="hash">${esc(data.chainHead)}</span>` : ""}
   </p>
 </section>`;

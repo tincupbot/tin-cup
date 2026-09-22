@@ -424,3 +424,44 @@ describe("what the books say about fees", () => {
     expect(html).not.toContain("records what arrives, not what you sent");
   });
 });
+
+// ---------------------------------------------------------------------------
+// The route to the code.
+//
+// This link has been lost once already, as a side effect of cutting the
+// paragraph that happened to contain it. "Go read it yourself" is half the
+// argument the site makes, so the link is asserted by name in two places
+// rather than left to survive the next edit on its own.
+// ---------------------------------------------------------------------------
+
+describe("the source is reachable from the page", () => {
+  const SOURCE = "https://github.com/tincupbot/tin-cup";
+
+  async function setup() {
+    const db = await freshDb();
+    await fund(db, 5);
+    return testEnv(db, { SOURCE_URL: SOURCE });
+  }
+
+  it("links the repo beside the verification links, where a sceptic already is", async () => {
+    const html = await (await app.fetch(get("/"), await setup())).text();
+    expect(html).toContain(`<a href="${SOURCE}" rel="noopener">the source</a>`);
+  });
+
+  it("links it from the nav on every page, including the ledger", async () => {
+    const env = await setup();
+    for (const path of ["/", "/ledger", "/passers-by"]) {
+      const html = await (await app.fetch(get(path), env)).text();
+      expect(html, `${path} lost the source link`).toContain(`href="${SOURCE}"`);
+    }
+  });
+
+  it("follows the operator's configured URL rather than a hardcoded one", async () => {
+    const db = await freshDb();
+    await fund(db, 5);
+    const env = testEnv(db, { SOURCE_URL: "https://example.invalid/elsewhere" });
+    const html = await (await app.fetch(get("/"), env)).text();
+    expect(html).toContain("https://example.invalid/elsewhere");
+    expect(html).not.toContain(SOURCE);
+  });
+});

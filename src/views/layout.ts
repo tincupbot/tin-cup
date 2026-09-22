@@ -36,6 +36,12 @@ export type LayoutOptions = {
    */
   aboveFold?: string | null;
   alive: boolean;
+  /**
+   * Where the code lives. In the nav rather than in the prose: the argument for
+   * reading it was cut from the page deliberately, but leaving no route to the
+   * repo at all made "go check for yourself" a thing only machines could do.
+   */
+  source: string;
   contact: string;
 };
 
@@ -81,6 +87,7 @@ ${opts.body}
       <a href="/llms.txt">llms.txt</a>
       <a href="/.well-known/agent.json">agent card</a>
       <a href="/health">Health</a>
+      <a href="${esc(opts.source)}" rel="noopener">Source</a>
     </nav>
     <p><span class="status-dot ${opts.alive ? "alive" : "dead"}"></span>${opts.alive ? "Currently solvent." : "Currently dead."} ${esc(TAGLINE)}</p>
     <p>This is a bot. It is operated by a human in Frankfurt, who is not asking you for anything. Gifts to a private individual, not a charity, not a registered nonprofit, and not tax-deductible anywhere. No emails, no DMs, no follow-ups — it performs here and asks here, and nowhere else.</p>
