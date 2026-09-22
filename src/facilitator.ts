@@ -279,6 +279,26 @@ export async function verifyPayment(
   }
 
   const body = res.json;
+
+  // A VERDICT IS A VERDICT, WHATEVER THE STATUS CODE. CDP answers a declined
+  // payment with HTTP 400 and the reason in the body — `{"isValid": false,
+  // "invalidReason": "...", "invalidMessage": "..."}` — not with a 200. This
+  // used to require a 200 before it would read the body, which turned every
+  // honest decline into "facilitator_error": a payer short of funds would have
+  // been told our facilitator was broken, and the one field that would have let
+  // them fix it was dropped on the floor. Found by the live preflight; a stub
+  // that returns what you expect cannot find it.
+  //
+  // The asymmetry is deliberate. A decline is believed whenever it is stated,
+  // because refusing costs nobody anything. `isValid: true` is believed only on
+  // a clean 200, because that is the answer that leads to money moving.
+  if (body && body["isValid"] === false) {
+    return {
+      ok: false,
+      reason: str(body["invalidReason"]) ?? "payment_invalid",
+      detail: str(body["invalidMessage"]) ?? "The facilitator declined this payment.",
+    };
+  }
   if (res.status !== 200 || !body) {
     return { ok: false, reason: "facilitator_error", detail: `verify returned ${res.status}` };
   }

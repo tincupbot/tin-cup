@@ -146,6 +146,62 @@ describe("settlement refuses rather than inventing money", () => {
     expect(await balance(db)).toBe(0);
   });
 
+  /**
+   * Written from a live 400 on 2026-09-22, not from the docs. CDP answers a
+   * declined payment with HTTP 400 and the verdict in the body. The code used
+   * to require a 200 before it would read that body, so every honest decline
+   * reached the payer as "facilitator_error" — our outage, not their problem,
+   * and the one field that would have let them fix it dropped.
+   */
+  it("passes on the facilitator's reason when a decline arrives as a 400", async () => {
+    const db = await freshDb();
+    stubFacilitator({
+      verify: {
+        status: 400,
+        body: {
+          isValid: false,
+          invalidReason: "insufficient_funds",
+          invalidMessage: "Payer balance is below the required amount.",
+          payer: "0x1111111111111111111111111111111111111111",
+        },
+      },
+    });
+
+    const res = await alms(db, env(db));
+    expect(res.status).toBe(402);
+    const body = (await res.json()) as Record<string, unknown>;
+    // The payer's problem, named, so it is actionable.
+    expect(body["error"]).toBe("insufficient_funds");
+    expect(String(body["detail"])).toContain("below the required amount");
+    expect(await balance(db)).toBe(0);
+  });
+
+  it("still calls a bodyless failure an outage rather than a decline", async () => {
+    // The other half of the asymmetry: no verdict in the body means we do not
+    // know, and "we do not know" is not the payer's fault.
+    const db = await freshDb();
+    stubFacilitator({ verify: { status: 500, body: { message: "upstream exploded" } } });
+
+    const res = await alms(db, env(db));
+    expect(res.status).toBe(402);
+    expect((await res.json()) as Record<string, unknown>).toMatchObject({ error: "facilitator_error" });
+  });
+
+  it("does not take isValid:true from anything but a clean 200", async () => {
+    // Bad news is believed whenever it is stated; good news has to arrive
+    // properly, because good news is what leads to money moving.
+    const db = await freshDb();
+    stubFacilitator({
+      verify: { status: 500, body: { isValid: true, payer: "0x1111111111111111111111111111111111111111" } },
+      settle: OK_SETTLE,
+    });
+
+    const res = await alms(db, env(db));
+    expect(res.status).toBe(402);
+    expect(await balance(db)).toBe(0);
+    expect((await allEntries(db)).filter((e) => e.kind === "x402_alms")).toHaveLength(0);
+  });
+
   it("leaves the nonce unspent when verification fails, so an honest payer can retry", async () => {
     // Verification is free and moves nothing. Burning the authorization on a
     // rejection would punish a payer for our round trip.

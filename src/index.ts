@@ -1360,8 +1360,10 @@ app.get("/__facilitator", async (c) => {
       ? await (async () => {
           const requirements = buildRequirements(x, `${siteUrl(c.env)}/alms`);
           const { status, body } = await probeVerify(cfg, probePayload(requirements), requirements);
-          // A verdict — any verdict — means the request itself was understood.
-          const verdict = status === 200 && body !== null && "isValid" in body;
+          // A verdict — any verdict — means the request itself was understood,
+          // and CDP delivers a decline with a 400 rather than a 200. What a
+          // malformed request looks like is a body with no verdict in it.
+          const verdict = body !== null && "isValid" in body;
           return {
             request_shape_accepted: verdict,
             http_status: status,
