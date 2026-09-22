@@ -181,6 +181,32 @@ function post(
   return request(cfg, "POST", path, body, fetchImpl);
 }
 
+/**
+ * The raw verify exchange, for the operator preflight only.
+ *
+ * `verifyPayment` deliberately collapses everything that is not a clean verdict
+ * into `facilitator_error`, because the money path has no use for the
+ * difference and every extra field is another thing to leak. The preflight has
+ * exactly the opposite need: when CDP refuses the request, the reason it gives
+ * is the whole point of asking. So this returns what came back, and it is
+ * reachable only from behind the admin token.
+ */
+export async function probeVerify(
+  cfg: FacilitatorConfig,
+  payload: PaymentPayload,
+  requirements: PaymentRequirements,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ status: number; body: Record<string, unknown> | null }> {
+  const res = await request(
+    cfg,
+    "POST",
+    "/v2/x402/verify",
+    { x402Version: 1, paymentPayload: payload, paymentRequirements: requirements },
+    fetchImpl,
+  );
+  return { status: res.status, body: res.json };
+}
+
 export type PreflightResult =
   | { ok: true; kinds: Array<{ scheme: string; network: string }> }
   | { ok: false; reason: string; detail: string };

@@ -61,6 +61,7 @@ import {
   atomicToMicros,
   facilitatorConfig,
   facilitatorPreflight,
+  probeVerify,
   settlePayment,
   verifyPayment,
 } from "./facilitator.ts";
@@ -1358,21 +1359,22 @@ app.get("/__facilitator", async (c) => {
     c.req.query("probe") === "verify"
       ? await (async () => {
           const requirements = buildRequirements(x, `${siteUrl(c.env)}/alms`);
-          const verified = await verifyPayment(cfg, probePayload(requirements), requirements);
-          return verified.ok
-            ? {
-                // Cannot happen against a 65-zero-byte signature. If it ever
-                // does, the facilitator is not checking signatures and nothing
-                // it says can be relied on.
-                request_shape_accepted: true,
-                alarming: true,
-                detail: "The facilitator called an unsignable payment valid. Do not switch on.",
-              }
-            : {
-                request_shape_accepted: verified.reason !== "facilitator_error",
-                reason: verified.reason,
-                detail: verified.detail,
-              };
+          const { status, body } = await probeVerify(cfg, probePayload(requirements), requirements);
+          // A verdict — any verdict — means the request itself was understood.
+          const verdict = status === 200 && body !== null && "isValid" in body;
+          return {
+            request_shape_accepted: verdict,
+            http_status: status,
+            // Cannot happen against a 65-zero-byte signature. If it ever does,
+            // the facilitator is not checking signatures and nothing it says
+            // can be relied on.
+            ...(verdict && body?.["isValid"] === true
+              ? { alarming: "The facilitator called an unsignable payment valid. Do not switch on." }
+              : {}),
+            // Verbatim, because when CDP refuses the request the reason it
+            // gives is the entire point of having asked.
+            facilitator_said: body,
+          };
         })()
       : null;
 

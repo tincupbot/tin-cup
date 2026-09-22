@@ -477,7 +477,10 @@ describe("the facilitator preflight", () => {
 
       const probe = ((await res.json()) as Record<string, unknown>)["probe"] as Record<string, unknown>;
       expect(probe["request_shape_accepted"]).toBe(true);
-      expect(probe["reason"]).toBe("invalid_exact_evm_payload_signature");
+      expect(probe["http_status"]).toBe(200);
+      expect(probe["facilitator_said"]).toMatchObject({ invalidReason: "invalid_exact_evm_payload_signature" });
+      // A declined payment is not an alarm. Being called valid would be.
+      expect(probe).not.toHaveProperty("alarming");
       expect(sent[1]).toBe("https://api.cdp.coinbase.com/platform/v2/x402/verify");
       // It never settles, and it never touches the books.
       expect(sent.some((u) => u.endsWith("/settle"))).toBe(false);
@@ -495,7 +498,9 @@ describe("the facilitator preflight", () => {
 
       const probe = ((await res.json()) as Record<string, unknown>)["probe"] as Record<string, unknown>;
       expect(probe["request_shape_accepted"]).toBe(false);
-      expect(probe["reason"]).toBe("facilitator_error");
+      expect(probe["http_status"]).toBe(400);
+      // Verbatim: when CDP refuses the request, its reason is the finding.
+      expect(probe["facilitator_said"]).toMatchObject({ message: "invalid request body" });
     });
 
     it("sends a payment no key could have signed, against the real requirements", async () => {
