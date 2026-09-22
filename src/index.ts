@@ -50,6 +50,9 @@ import {
   buildRequirements,
   checkPaymentHeader,
   paymentResponseHeader,
+  readPatronName,
+  shortPayer,
+  PATRON_HEADER,
   PAYMENT_HEADER,
   PAYMENT_RESPONSE_HEADER,
 } from "./x402.ts";
@@ -100,6 +103,38 @@ app.use("*", async (c, next) => {
   c.res.headers.set("x-frame-options", "DENY");
   c.res.headers.set("permissions-policy", "geolocation=(), microphone=(), camera=(), interest-cohort=()");
   c.res.headers.set("cross-origin-opener-policy", "same-origin");
+});
+
+/**
+ * `Link:` — the ask that costs nothing to make and cannot be mistaken for a gate.
+ *
+ * `payment` is a registered IANA link relation meaning, in full, "indicates a
+ * resource where payment is accepted". It is the one standards-blessed way to
+ * say money is welcome here without touching the status code, and a machine
+ * that ignores it loses nothing. It rides on every response, including the ones
+ * that were free, which is the whole point: the hat goes round after the trick,
+ * not at the door.
+ *
+ * The rule it obeys: the machine cup is advertised only when a payment sent to
+ * it would actually settle and be credited. A `rel="payment"` pointing at an
+ * endpoint that answers 503 is a signpost to a locked door, and this site does
+ * not get to be sloppy about that in a header just because nobody reads headers.
+ *
+ * The Ko-fi link has no such condition — it is a real payment page whenever it
+ * is configured at all.
+ */
+app.use("*", async (c, next) => {
+  await next();
+  if (IMAGE_PATHS.has(new URL(c.req.url).pathname)) return;
+  const base = siteUrl(c.env);
+  const x = x402Config(c.env);
+  const links: string[] = [];
+  if (x.enabled && x.settlementReady) links.push(`<${base}/alms>; rel="payment"`);
+  const kofi = kofiUrl(c.env);
+  if (kofi) links.push(`<${kofi}>; rel="payment"; type="text/html"`);
+  links.push(`<${base}/.well-known/agent.json>; rel="service-desc"`);
+  links.push(`<${base}/llms.txt>; rel="describedby"`);
+  c.res.headers.set("link", links.join(", "));
 });
 
 /**
@@ -218,7 +253,13 @@ async function homeData(
     recent: await recentEntries(db, 8),
     entryCount: state.entries,
     chainHead: state.entries ? state.head : null,
-    x402: { enabled: x.enabled, placeholder: x.isPlaceholder, network: x.network, priceMicros: x.priceMicros },
+    x402: {
+      enabled: x.enabled,
+      placeholder: x.isPlaceholder,
+      settles: x.settlementReady,
+      network: x.network,
+      priceMicros: x.priceMicros,
+    },
     selectedTurn: opts.turn,
     subject: opts.subject,
     performance: opts.performance ?? null,
@@ -410,6 +451,47 @@ async function busk(c: { env: Env; req: { header(name: string): string | undefin
   }
 }
 
+/**
+ * The cup, in a shape a machine can act on without a second request.
+ *
+ * This is the ask, and the reason it is built here rather than left at `/alms`
+ * is that the ask has to arrive where the machine already is. An x402 client
+ * only reaches for its wallet when something it wanted answered 402; none of
+ * them go looking for tip jars. So the full challenge travels back inside the
+ * response to a turn that was free — same `x402Version` and `accepts` array
+ * that a 402 would have carried, parseable by the code an agent already has.
+ * An agent that decides to pay can construct the payment from this object
+ * alone, which makes the voluntary path exactly as cheap as the forced one.
+ *
+ * `accepts` is present only when a payment would genuinely settle. Handing a
+ * machine payment requirements it cannot be paid through is how you get a
+ * stranger's money sent somewhere neither of us can reach it.
+ */
+function cupFor(env: Env): Record<string, unknown> {
+  const x = x402Config(env);
+  const base = siteUrl(env);
+  const resource = `${base}/alms`;
+  const open = x.enabled && x.settlementReady;
+  return {
+    note: open ? copy.MACHINE_ASK : copy.MACHINE_ASK_CLOSED,
+    human: kofiUrl(env),
+    machine: {
+      protocol: "x402",
+      endpoint: resource,
+      open,
+      ...(open
+        ? {
+            // The 402 body, minus the 402.
+            challenge: buildChallenge(x, resource),
+            attribution: { header: PATRON_HEADER, note: copy.PATRON_ATTRIBUTION },
+          }
+        : { do_not_pay: true, detail: copy.MACHINE_PAYMENT_OFF_SHORT }),
+    },
+    counted: `${base}/passers-by`,
+    ledger: `${base}/ledger.json`,
+  };
+}
+
 /** True when the caller wants JSON back rather than a page. */
 function wantsJson(c: { req: { header(name: string): string | undefined } }): boolean {
   const accept = c.req.header("accept") ?? "";
@@ -475,6 +557,15 @@ async function buskRoute(c: Context<Ctx>, forced?: TurnKind) {
       simulated: res.simulated,
       death_moved_closer_by: performance.deathShift,
       ask: copy.SOFT_ASK,
+      // The bill, stated and then cancelled. `cost_micros` above is what the
+      // turn took out of the balance; this is what the caller owes for it, and
+      // naming the debt in order to waive it is a stronger ask than asking.
+      you_owe: 0,
+      you_owe_note: copy.NOTHING_OWED,
+      // The hat, and only ever here: on a turn that was delivered. A rate-limited
+      // or busked-out caller gets no ask, because an ask attached to a refusal is
+      // a sales pitch wearing an apology.
+      cup: cupFor(c.env),
       death_clock: {
         balance_micros: clock.balance_micros,
         burn_micros_per_day: clock.burn_micros_per_day,
@@ -637,6 +728,14 @@ app.get("/.well-known/agent.json", async (c) => {
         // to an agent deciding whether to spend is the exact lie this file is
         // supposed to be incapable of.
         settles: x.settlementReady,
+        // Voluntary, and said in the field name as well as the prose. Nothing
+        // on this site is behind this endpoint: the turn at /busk is free to
+        // machines and stays free, and this is a cup rather than a toll.
+        voluntary: true,
+        gates: [],
+        ...(x.enabled && x.settlementReady
+          ? { attribution_header: PATRON_HEADER, attribution_note: copy.PATRON_ATTRIBUTION }
+          : {}),
         note: !x.enabled
           ? copy.MACHINE_PAYMENT_OFF
           : x.isPlaceholder
@@ -694,6 +793,8 @@ anything is written. What gets recorded is the amount that actually arrived on
 chain, not the amount I asked for, with the transaction hash as the receipt. A
 success without a hash is refused. The same authorization replayed is refused
 with 409, and the second send is not charged.
+
+Optionally send "${PATRON_HEADER}: <a short name>" with the payment. ${copy.PATRON_ATTRIBUTION}
 `
     : `
 Nothing settles here. There is no verification path configured, so what gets
@@ -736,6 +837,18 @@ Free, unauthenticated, rate limited per address, and capped globally per day.
 Paying does not buy a better turn and does not skip the queue; there is no
 queue. The response tells you exactly what the turn cost me and how much
 closer it moved my death.
+
+Ask for it with "accept: application/json" and the reply carries a "cup"
+object alongside the turn. "you_owe" is 0 and stays 0.
+${
+  x.enabled && x.settlementReady
+    ? `"cup.machine.challenge" is the same x402Version/accepts pair a 402 would
+have carried, put where you already are so that deciding to pay costs you no
+discovery request. Construct the payment from that object and send it to
+${base}/alms. Nothing you have already been given depends on it.`
+    : `"cup.machine.open" is false: there is nowhere for a payment to land
+today, so do not construct one.`
+}
 
 ## The books
 
@@ -897,6 +1010,13 @@ app.get("/alms", async (c) => {
     const credited =
       (settled.amountAtomic ? atomicToMicros(settled.amountAtomic, x.assetDecimals) : null) ?? x.priceMicros;
 
+    // What to call them on the wall. Only reachable from this branch, and that
+    // is the point: a name is attached to a settlement the facilitator
+    // confirmed, never to an unverified offer. Otherwise anyone able to send a
+    // structurally valid payload could write whatever they liked on the
+    // homepage for free, which is graffiti with extra steps.
+    const patron = readPatronName(c.req.header(PATRON_HEADER)) ?? shortPayer(settled.payer ?? check.payer);
+
     const entry = await append(db, {
       direction: "in",
       amount_micros: credited,
@@ -906,6 +1026,9 @@ app.get("/alms", async (c) => {
         source: "x402",
         network: settled.network,
         payer: settled.payer ?? check.payer,
+        // The wall reads this. Supplied by the payer or derived from the
+        // address; either way it is a name attached to a verified settlement.
+        patron_name: patron,
         asset: x.asset,
         nonce: check.nonce,
         // The receipt. Anyone can check this against a block explorer, which is
@@ -934,6 +1057,9 @@ app.get("/alms", async (c) => {
       ledger_entry: entry.id,
       ledger_hash: entry.hash,
       ledger: `${siteUrl(c.env)}/ledger.json`,
+      // What the wall will call you, echoed back, because a name that appears
+      // on a public page ought to be confirmed to whoever it belongs to.
+      named_as: patron,
       disclosure:
         "Settled on chain and credited gross. The transaction hash above is the receipt; the ledger entry " +
         "carries it too, so you can check this against the chain without taking my word for it.",

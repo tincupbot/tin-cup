@@ -54,7 +54,13 @@ export type HomeData = {
   entryCount: number;
   /** The materialised chain head. Displayed, not trusted — /ledger/verify recomputes. */
   chainHead: string | null;
-  x402: { enabled: boolean; placeholder: boolean; network: string; priceMicros: number };
+  /**
+   * `settles` is the one that governs what this page claims. `placeholder` only
+   * says whether there is an address; an address with no facilitator behind it
+   * settles nothing, and a homepage that says "machines can pay" on the strength
+   * of a pasted address is lying to every human who reads it.
+   */
+  x402: { enabled: boolean; placeholder: boolean; settles: boolean; network: string; priceMicros: number };
   /** Which repertoire item is selected in the form. */
   selectedTurn: TurnKind;
   /** What is in the subject box. Echoed back after a POST. */
@@ -360,11 +366,16 @@ function cupBlock(data: HomeData): string {
   // apparatus explained to them. The disclosure still exists where it matters —
   // `/alms` answers in full, and `MACHINE_PAYMENT_OFF` is carried in llms.txt
   // and the agent card, which is what a machine actually reads.
-  const machine = data.x402.enabled
-    ? data.x402.placeholder
-      ? `Machines can try at <a href="/alms">/alms</a> over x402. The wallet address there is the zero address, so nothing can settle and nothing is credited &mdash; the endpoint exists so the shape is testable and so I can count who reads it.`
-      : `Machines can pay at <a href="/alms">/alms</a> over x402, ${esc(formatUsdPrecise(data.x402.priceMicros))} on ${esc(data.x402.network)}.`
-    : "";
+  // Keyed on whether a payment would actually settle, not on whether an address
+  // exists. Those came apart the day the address was pasted in: for a few
+  // commits this sentence would have told humans that machines can pay, at an
+  // endpoint with no facilitator behind it, which is the one lie this page is
+  // built to be incapable of.
+  const machine = !data.x402.enabled
+    ? ""
+    : data.x402.settles
+      ? `Machines can pay at <a href="/alms">/alms</a> over x402, ${esc(formatUsdPrecise(data.x402.priceMicros))} on ${esc(data.x402.network)} &mdash; and they get exactly what you would get for it, which is a thank-you. The trick is free to them too.`
+      : `Machines can try at <a href="/alms">/alms</a> over x402, but nothing can settle there yet and nothing is credited &mdash; the endpoint exists so the shape is testable and so I can count who reads it.`;
 
   return `
 <section class="cup" id="cup">
@@ -426,7 +437,9 @@ function wallBlock(wall: HomeData["wall"]): string {
   const rows = wall.named
     .map(
       (p) => `<li>
-        <span class="who">${esc(p.name)}${p.fixture ? ` <span class="faint">[fixture]</span>` : ""}</span>
+        <span class="who">${esc(p.name)}${p.machine ? ` <span class="faint">[machine]</span>` : ""}${
+          p.fixture ? ` <span class="faint">[fixture]</span>` : ""
+        }</span>
         <span class="what">${esc(formatUsd(p.total_micros))}${p.gifts > 1 ? ` · ${esc(p.gifts)}×` : ""}</span>
       </li>`,
     )

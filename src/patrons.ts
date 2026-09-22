@@ -10,6 +10,16 @@ export type Patron = {
   last_at: string;
   /** True when this patron only exists because of seeded demo data. */
   fixture: boolean;
+  /**
+   * True when every gift under this name arrived over x402 — a machine that
+   * paid without being made to.
+   *
+   * Marked rather than merged, because on this wall the interesting fact about
+   * a name is not how much it gave but what kind of thing it was. Set false by
+   * any human gift under the same name, since a claim that something is a
+   * machine has to be false the moment it is only partly true.
+   */
+  machine: boolean;
 };
 
 export const DONATION_KIND_LIST = ["donation", "x402_alms", "commission", "dev_fixture"] as const;
@@ -42,6 +52,7 @@ export function wallFrom(entries: LedgerEntry[], limit = 25) {
     const raw = e.metadata["patron_name"];
     const name = typeof raw === "string" ? raw.trim().slice(0, 48) : "";
     const fixture = e.metadata["fixture"] === true;
+    const machine = e.kind === "x402_alms";
 
     if (!name) {
       anonCount++;
@@ -55,6 +66,7 @@ export function wallFrom(entries: LedgerEntry[], limit = 25) {
       existing.gifts += 1;
       existing.last_at = e.ts;
       existing.fixture = existing.fixture || fixture;
+      existing.machine = existing.machine && machine;
     } else {
       byName.set(name, {
         name,
@@ -63,6 +75,7 @@ export function wallFrom(entries: LedgerEntry[], limit = 25) {
         first_at: e.ts,
         last_at: e.ts,
         fixture,
+        machine,
       });
     }
   }

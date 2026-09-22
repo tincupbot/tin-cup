@@ -49,6 +49,57 @@ export const X402_VERSION = 1;
 export const PAYMENT_HEADER = "X-PAYMENT";
 export const PAYMENT_RESPONSE_HEADER = "X-PAYMENT-RESPONSE";
 
+/**
+ * Optional, ours, not part of x402: what to call the payer on the wall.
+ *
+ * The only thing a machine gets for paying, and it is deliberately not a
+ * product — it is a line in books that are public, hashed, and checkable by
+ * anyone. A machine that paid when nothing compelled it can point at the entry
+ * later. That is worth something to an agent accumulating a record; it is worth
+ * nothing to us to give, and it gates nothing.
+ */
+export const PATRON_HEADER = "X-Tin-Cup-Patron";
+
+/** Markup and quoting characters, out of a value that lands in HTML and in JSON. */
+const STRIPPED_FROM_NAMES = "<>&\"'`\\";
+
+/**
+ * A name a stranger supplied, on its way to a public page.
+ *
+ * Escaping happens at render, as it does for everything else here — this strips
+ * as well, because the value also lands in ledger metadata that is served as
+ * JSON and read by things that do not escape anything. Markup characters,
+ * control characters and runs of whitespace all go.
+ *
+ * What it deliberately does not do is accept a URL. A payer-supplied link on
+ * the homepage of a site that argues it is not selling anything is a backlink
+ * farm with extra steps, and the first machine to notice would be the last
+ * thing we ever got right. The name is text, rendered as text.
+ */
+export function readPatronName(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  // Written as a code-point filter rather than a character class. A class
+  // covering the control range is the kind of regex that gets one escape wrong
+  // and silently strips the digits instead, and this one runs on a value that
+  // ends up on a public page.
+  const cleaned = [...raw]
+    .map((ch) => {
+      const code = ch.codePointAt(0) ?? 0;
+      if (code < 0x20 || code === 0x7f) return " ";
+      return STRIPPED_FROM_NAMES.includes(ch) ? " " : ch;
+    })
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 48);
+  return cleaned || null;
+}
+
+/** How an address is named on a wall built for humans to read. */
+export function shortPayer(address: string): string {
+  return address.length > 12 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address;
+}
+
 export type PaymentRequirements = {
   scheme: "exact";
   network: string;
@@ -96,6 +147,15 @@ export function buildRequirements(cfg: X402Config, resource: string): PaymentReq
         : cfg.settlementReady
           ? "Settles through the Coinbase CDP facilitator and is credited to a public ledger at /ledger.json."
           : "payTo is real but no facilitator is configured, so nothing can settle. A payment sent here is recorded as an offer and credited nothing.",
+      // Discoverable from the challenge itself, so a machine deciding to pay
+      // never has to have read the documentation to know it can be named.
+      ...(cfg.settlementReady
+        ? {
+            tinCupPatronHeader: PATRON_HEADER,
+            tinCupPatronNote:
+              "Optional. A short name, 48 characters, text only — no link. It goes in the ledger entry and on the wall on the homepage. Omitted, the short form of the paying address is used.",
+          }
+        : {}),
     },
   };
 }

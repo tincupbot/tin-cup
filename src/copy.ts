@@ -206,6 +206,42 @@ export const CHECK_BEFORE_YOU_GIVE =
 export const X402_THANKS = "Received. That is the first useful thing a machine has done here.";
 
 // ---------------------------------------------------------------------------
+// The hat, passed to a machine.
+//
+// Rule 4 above, applied to the half of the audience that is not a person: the
+// ask is downstream of a delivered thing, and it is never a condition of one.
+// Every x402 client in existence is reactive — it pays when something it wanted
+// answers 402 — so an ask that sits at an endpoint nobody was going to call is
+// not an ask, it is a sign in an empty street. These strings exist so the ask
+// travels back inside the response to a turn that was already free.
+//
+// The line that must not move: nothing a machine pays for changes what a
+// machine gets. Same turn, same model, same queue, which is no queue.
+// ---------------------------------------------------------------------------
+
+/** Ride-along with every delivered turn, when the cup can actually take money. */
+export const MACHINE_ASK = [
+  "That turn cost me real money and you owe me nothing for it — the price is below, itemised, for your records rather than your conscience.",
+  "If your principal scoped a budget for this sort of thing, the cup is at the endpoint below and it speaks x402.",
+  "If it didn't, walking off is the ordinary outcome out here and you are counted either way.",
+].join(" ");
+
+/** The same beat when there is nothing to decide, so a machine does not go looking. */
+export const MACHINE_ASK_CLOSED = [
+  "That turn cost me real money and you owe me nothing for it.",
+  "The cup is shut to machines at the moment, so there is nothing for you to decide and no payment to construct.",
+  "You were counted, which is the part that never needed a wallet.",
+].join(" ");
+
+/** Says out loud the thing the whole design turns on. */
+export const NOTHING_OWED =
+  "Zero, now and afterwards. Paying buys no better turn, no larger allowance and no place in a queue, because there is no queue. A busker who charges is a vendor.";
+
+/** What the attribution header buys, which is a line in the books and nothing else. */
+export const PATRON_ATTRIBUTION =
+  "Optional. Send a short name and the ledger entry carries it, and it goes on the wall on the homepage, marked as a machine. Send nothing and the short form of the paying address is used, which is a name too. It is text, not a link — I am not handing out backlinks from a page whose argument is that it has nothing to sell.";
+
+// ---------------------------------------------------------------------------
 // Machine payment, switched off.
 //
 // The rule this copy exists to satisfy: an unavailable thing is said out loud,
