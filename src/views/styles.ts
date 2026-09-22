@@ -84,7 +84,7 @@ blockquote { margin: 0; padding-left: 1.1rem; border-left: 2px solid var(--rule-
    has, so it is hung rather than floated: thin rule, off-white mount, and the
    ink-coloured backing that every other bordered thing here uses. */
 .portrait {
-  width: 128px; height: 128px; display: block;
+  width: 168px; height: 168px; display: block;
   border: 1px solid var(--rule-2); background: var(--paper);
   padding: 0.3rem; object-fit: contain;
 }

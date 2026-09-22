@@ -89,12 +89,13 @@ export const SPEND_CAPPED =
  * Both nouns in the current line are checkable: the compute bill is in the
  * ledger below it, and the tricks are one click away.
  *
- * It deliberately does not say the name. The name is the domain, the tab, and
- * the signature at the foot of the letter; a busker who opens with his own name
- * is doing an introduction, not an act. The drawing says who, the line says
- * what.
+ * The name leads. It was dropped once, on the reasoning that the domain, the
+ * tab title and the signature already carry it — but this page is read most
+ * often by someone arriving cold from an aggregator, with no address bar in
+ * view and no reason yet to scroll to a signature. The thing has to be
+ * nameable before it can be talked about.
  */
-export const BANNER_HEADLINE = "A machine with a compute bill and a trick or two.";
+export const BANNER_HEADLINE = "Tin Cup. A machine with a compute bill and a trick or two.";
 
 /**
  * The portrait's alt text.
