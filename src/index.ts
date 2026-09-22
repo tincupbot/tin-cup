@@ -50,6 +50,7 @@ import {
   buildRequirements,
   checkPaymentHeader,
   paymentResponseHeader,
+  probePayload,
   readPatronName,
   shortPayer,
   PATRON_HEADER,
@@ -1347,11 +1348,40 @@ app.get("/__facilitator", async (c) => {
   // base would take our challenge and decline every payment made against it.
   const advertised = { scheme: "exact", network: x.network };
   const supported = result.kinds.some((k) => k.scheme === advertised.scheme && k.network === advertised.network);
+
+  // `?probe=verify` goes one step further and sends a real request down the
+  // money path — a payment that cannot possibly be valid, against the exact
+  // requirements a payer would be handed. See `probePayload`. It settles
+  // nothing, claims no nonce and writes no row; what it proves is that CDP
+  // accepts the *shape* of what we send, which auth alone does not.
+  const probe =
+    c.req.query("probe") === "verify"
+      ? await (async () => {
+          const requirements = buildRequirements(x, `${siteUrl(c.env)}/alms`);
+          const verified = await verifyPayment(cfg, probePayload(requirements), requirements);
+          return verified.ok
+            ? {
+                // Cannot happen against a 65-zero-byte signature. If it ever
+                // does, the facilitator is not checking signatures and nothing
+                // it says can be relied on.
+                request_shape_accepted: true,
+                alarming: true,
+                detail: "The facilitator called an unsignable payment valid. Do not switch on.",
+              }
+            : {
+                request_shape_accepted: verified.reason !== "facilitator_error",
+                reason: verified.reason,
+                detail: verified.detail,
+              };
+        })()
+      : null;
+
   return c.json({
     ok: true,
     authenticated: true,
     advertised,
     advertised_supported: supported,
+    ...(probe ? { probe } : {}),
     kinds: result.kinds,
     x402_enabled: x.enabled,
     settlement_ready: x.settlementReady,

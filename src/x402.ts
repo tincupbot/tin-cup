@@ -175,6 +175,42 @@ export type PayloadCheck =
   | { ok: true; payload: PaymentPayload; payer: string; nonce: string }
   | { ok: false; error: string };
 
+/**
+ * A payment that is complete in shape and impossible in fact: correct fields,
+ * correct widths, and a signature of 65 zero bytes, which no key can produce.
+ *
+ * WHAT IT IS FOR. The facilitator can reject our request for two very different
+ * reasons — "this payment is bad" and "this request is not what I accept" — and
+ * from the outside they look similar until you read the status code. Sending
+ * this deliberately-doomed payload asks the second question on its own: a 200
+ * with `isValid: false` means our request body is the shape CDP wants and only
+ * the payment was wrong, while a 400 means we would have been malforming every
+ * real payment too. That is a difference worth knowing before a stranger's
+ * money is the thing that discovers it.
+ *
+ * It cannot move anything. Verification settles nothing by definition, and this
+ * pays from an address that has never held a cent to begin with.
+ */
+export function probePayload(requirements: PaymentRequirements, now: Date = new Date()): PaymentPayload {
+  const nowSec = Math.floor(now.getTime() / 1000);
+  return {
+    x402Version: X402_VERSION,
+    scheme: "exact",
+    network: requirements.network,
+    payload: {
+      signature: `0x${"00".repeat(65)}`,
+      authorization: {
+        from: "0x0000000000000000000000000000000000000001",
+        to: requirements.payTo,
+        value: requirements.maxAmountRequired,
+        validAfter: String(nowSec - 60),
+        validBefore: String(nowSec + 600),
+        nonce: `0x${"11".repeat(32)}`,
+      },
+    },
+  };
+}
+
 /** EVM address shape. Not a checksum test — just enough that the ledger can't be graffitied. */
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 

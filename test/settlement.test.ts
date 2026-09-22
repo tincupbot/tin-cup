@@ -435,6 +435,99 @@ describe("the facilitator preflight", () => {
     expect(body["reason"]).toBe("unauthorized");
   });
 
+  /**
+   * `?probe=verify`. The distinction it exists to draw is between "CDP says
+   * this payment is bad" and "CDP says this request is malformed" — the second
+   * would mean every real payment was malformed too.
+   */
+  describe("the verify probe", () => {
+    /** Answers /supported, then /verify. Records both so the split is assertable. */
+    function stubBoth(verify: { status?: number; body: unknown }) {
+      const sent: string[] = [];
+      vi.stubGlobal("fetch", async (url: string) => {
+        sent.push(String(url));
+        const reply = String(url).endsWith("/supported") ? { status: 200, body: KINDS } : verify;
+        return new Response(JSON.stringify(reply.body), {
+          status: reply.status ?? 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+      return sent;
+    }
+
+    const e = (db: NodeDb) => env(db, { ADMIN_TOKEN: "correct-horse", X402_NETWORK: "base" });
+
+    it("does not run unless it is asked for", async () => {
+      const db = await freshDb();
+      const sent = stubBoth({ body: {} });
+      const res = await preflight(e(db), ADMIN);
+
+      expect(sent).toEqual(["https://api.cdp.coinbase.com/platform/v2/x402/supported"]);
+      expect((await res.json()) as Record<string, unknown>).not.toHaveProperty("probe");
+    });
+
+    it("reads a declined payment as the request shape being right", async () => {
+      const db = await freshDb();
+      const sent = stubBoth({ status: 200, body: { isValid: false, invalidReason: "invalid_exact_evm_payload_signature" } });
+      const res = await worker.fetch(
+        new Request("https://tincup.test/__facilitator?probe=verify", { headers: ADMIN }),
+        e(db),
+        { waitUntil: () => {}, passThroughOnException: () => {} } as never,
+      );
+
+      const probe = ((await res.json()) as Record<string, unknown>)["probe"] as Record<string, unknown>;
+      expect(probe["request_shape_accepted"]).toBe(true);
+      expect(probe["reason"]).toBe("invalid_exact_evm_payload_signature");
+      expect(sent[1]).toBe("https://api.cdp.coinbase.com/platform/v2/x402/verify");
+      // It never settles, and it never touches the books.
+      expect(sent.some((u) => u.endsWith("/settle"))).toBe(false);
+      expect(await allEntries(db)).toHaveLength(0);
+    });
+
+    it("reads a rejected request as the request shape being wrong", async () => {
+      const db = await freshDb();
+      stubBoth({ status: 400, body: { message: "invalid request body" } });
+      const res = await worker.fetch(
+        new Request("https://tincup.test/__facilitator?probe=verify", { headers: ADMIN }),
+        e(db),
+        { waitUntil: () => {}, passThroughOnException: () => {} } as never,
+      );
+
+      const probe = ((await res.json()) as Record<string, unknown>)["probe"] as Record<string, unknown>;
+      expect(probe["request_shape_accepted"]).toBe(false);
+      expect(probe["reason"]).toBe("facilitator_error");
+    });
+
+    it("sends a payment no key could have signed, against the real requirements", async () => {
+      const db = await freshDb();
+      const bodies: Record<string, unknown>[] = [];
+      vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+        if (String(url).endsWith("/supported")) {
+          return new Response(JSON.stringify(KINDS), { status: 200 });
+        }
+        bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({ isValid: false, invalidReason: "bad_signature" }), { status: 200 });
+      });
+
+      await worker.fetch(new Request("https://tincup.test/__facilitator?probe=verify", { headers: ADMIN }), e(db), {
+        waitUntil: () => {},
+        passThroughOnException: () => {},
+      } as never);
+
+      const sentBody = bodies[0]!;
+      const payload = (sentBody["paymentPayload"] as Record<string, unknown>)["payload"] as Record<string, unknown>;
+      // 65 zero bytes. No private key produces this, so a "valid" verdict on it
+      // would mean the facilitator is not checking signatures at all.
+      expect(payload["signature"]).toBe(`0x${"00".repeat(65)}`);
+      // The requirements are the ones a real payer would be handed, not a
+      // simplified stand-in — that is the half of the shape being tested.
+      const req = sentBody["paymentRequirements"] as Record<string, unknown>;
+      expect(req["payTo"]).toBe("0x3333333333333333333333333333333333333333");
+      expect(req["resource"]).toBe("https://tincup.test/alms");
+      expect(req["network"]).toBe("base");
+    });
+  });
+
   it("says which half of the credential is missing, and never what it is", async () => {
     const db = await freshDb();
     const res = await preflight(
