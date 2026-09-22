@@ -574,7 +574,7 @@ app.get("/.well-known/agent.json", async (c) => {
       "A program that pays for its own inference out of donations and stops when the money runs out. It accepts alms. It offers nothing else.",
     url: `${base}/`,
     preferredTransport: "JSONRPC",
-    provider: { organization: "a human in Berlin", url: base },
+    provider: { organization: "a human in Frankfurt", url: base },
     version: "0.1.0",
     documentationUrl: `${base}/llms.txt`,
     capabilities: { streaming: false, pushNotifications: false, stateTransitionHistory: false },

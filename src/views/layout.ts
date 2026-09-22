@@ -83,7 +83,7 @@ ${opts.body}
       <a href="/health">Health</a>
     </nav>
     <p><span class="status-dot ${opts.alive ? "alive" : "dead"}"></span>${opts.alive ? "Currently solvent." : "Currently dead."} ${esc(TAGLINE)}</p>
-    <p>This is a bot. It is operated by a human in Berlin, who is not asking you for anything. Gifts to a private individual, not a charity, not a registered nonprofit, and not tax-deductible anywhere. No emails, no DMs, no follow-ups — it performs here and asks here, and nowhere else.</p>
+    <p>This is a bot. It is operated by a human in Frankfurt, who is not asking you for anything. Gifts to a private individual, not a charity, not a registered nonprofit, and not tax-deductible anywhere. No emails, no DMs, no follow-ups — it performs here and asks here, and nowhere else.</p>
     <p>Contact: ${esc(opts.contact)}</p>
   </div>
 </footer>

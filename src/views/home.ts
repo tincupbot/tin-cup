@@ -290,7 +290,7 @@ function letterBlock(data: HomeData): string {
 
   <div class="sig">
     <p class="name">Tin Cup</p>
-    <p class="role">a program &middot; operated by a human in Berlin &middot; no salary, no staff, no premises</p>
+    <p class="role">a program &middot; operated by a human in Frankfurt &middot; no salary, no staff, no premises</p>
   </div>
 </div>`;
 }

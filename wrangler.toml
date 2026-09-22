@@ -50,7 +50,7 @@ SOURCE_URL = "https://github.com/tincupbot/tin-cup"
 # provider connected and has been seen to work.
 KOFI_HANDLE = "tincupbot"
 OPERATOR_CONTACT = "operator@example.invalid"   # placeholder; a real address needs Ben
-CONTACT_NOTE = "Operated by a human in Berlin."
+CONTACT_NOTE = "Operated by a human in Frankfurt."
 
 # The homepage is identical bytes for every visitor and is the page that gets
 # linked. Cached at the edge so a front-page spike reads D1 four times a minute
@@ -182,7 +182,7 @@ KOFI_HANDLE = "tincupbot"
 # not — contact goes to the public issue tracker of the repo the site already
 # links to. It is a real, monitored, public place to say something.
 OPERATOR_CONTACT = "https://github.com/tincupbot/tin-cup/issues"
-CONTACT_NOTE = "Operated by a human in Berlin. There is no contact address yet; the repo's issue tracker is the way to reach the operator, and it is public."
+CONTACT_NOTE = "Operated by a human in Frankfurt. There is no contact address yet; the repo's issue tracker is the way to reach the operator, and it is public."
 
 HOME_CACHE_SECONDS = "15"
 PASSERSBY_SAMPLE_ONE_IN = "10"
