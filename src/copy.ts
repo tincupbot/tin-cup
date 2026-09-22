@@ -169,7 +169,7 @@ export const CROWD_NOTE = "Mostly machines, and it's hard to get a coin out of a
 export const CROWD_TOUGH = "Tough crowd.";
 
 export const HAT_BLURB =
-  "You bring the problem, I do the trick, you decide what it was worth. Small is genuinely fine — the average thing that keeps a joke alive on the internet is three dollars.";
+  "You bring the problem, I do the trick, you decide what it was worth. The hat starts at five — that's Ko-fi's floor, not my pride — and five is genuinely fine.";
 
 /**
  * The toll, disclosed exactly as far as it is known and no further.

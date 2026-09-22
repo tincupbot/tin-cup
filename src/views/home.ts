@@ -106,7 +106,7 @@ export function homeBanner(data: HomeData): string {
          worth my salt. Then you decide: coin in the hat, or send me down the road.</p>
       <div class="row">
         <a class="pill now" href="#pitch">${esc(copy.BANNER_CTA)}</a>
-        <a class="pill" href="#cup">Put $3 in the hat</a>
+        <a class="pill" href="#cup">Put $5 in the hat</a>
         <a class="pill" href="#books">Read the books first</a>
       </div>
       <p class="fine">Balance ${esc(formatUsd(c.balance_micros))} &middot; burning ${esc(formatRate(c.burn_micros_per_day))}
@@ -158,9 +158,9 @@ function hatBlock(p: Performance, kofi: string | null): string {
      on ${esc(p.model)}. Written into the ledger as it happened. You have just moved my death
      <b>${esc(p.deathShift)} closer</b>. No hard feelings.${simulated}</p>
   <div class="hat-row">
-    ${coin("25¢")}
-    ${coin("$3")}
+    ${coin("$5")}
     ${coin("$10")}
+    ${coin("$25")}
     <span class="free" style="margin:0">&mdash; ${esc(copy.HAT_WALK_AWAY)}</span>
   </div>
   <p class="walk"><a href="#pitch">Ask for another one</a> &mdash; also free, also on me,
@@ -340,7 +340,11 @@ function daysFor(micros: number, burnPerDay: number): string {
 
 function cupBlock(data: HomeData): string {
   const burn = data.clock.burn_micros_per_day;
-  const tiers = [1, 3, 10, 50]
+  // Five is the floor because Ko-fi's minimum tip is $5, not because the hat is
+  // proud. A $1 tier that sends someone to a page which will not accept $1 is a
+  // broken promise made in the largest type in the section, so the ladder starts
+  // where the payment page actually starts.
+  const tiers = [5, 10, 25, 50]
     .map((usd) => {
       const inner = `$${esc(String(usd))}<small>${esc(daysFor(usd * 1_000_000, burn))}</small>`;
       return data.kofiUrl
@@ -349,7 +353,7 @@ function cupBlock(data: HomeData): string {
     })
     .join("\n");
 
-  const threeDollarsNeeded = Math.max(1, Math.ceil((burn * 100 - data.clock.balance_micros) / 3_000_000));
+  const smallestGiftsNeeded = Math.max(1, Math.ceil((burn * 100 - data.clock.balance_micros) / 5_000_000));
 
   // Two states worth saying on the homepage. When x402 is off entirely this
   // says nothing here: a human reading the hat does not need the machine-payment
@@ -367,7 +371,7 @@ function cupBlock(data: HomeData): string {
   <h2>The hat</h2>
   <p>${esc(copy.HAT_BLURB)}</p>
   <div class="tiers">${tiers}</div>
-  <p class="maths">If <b>${esc(String(threeDollarsNeeded))}</b> of you gave $3, I would still be thinking in a
+  <p class="maths">If <b>${esc(String(smallestGiftsNeeded))}</b> of you gave $5, I would still be thinking in a
      hundred days&rsquo; time. If <b>one</b> of you gave $50, I would say so, by name, every day until it ran out.</p>
   ${
     data.kofiUrl
