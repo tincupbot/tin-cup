@@ -453,10 +453,6 @@ ${cupBlock(data)}
 
 <p class="notes" id="books">
   <strong>Check before you give.</strong> ${esc(copy.CHECK_BEFORE_YOU_GIVE)}
-  <a href="/ledger">The full ledger</a> &middot; <a href="/ledger/verify">re-run the verification</a> &middot;
-  <a href="${esc(data.sourceUrl)}">the source</a>. Open source proves the code could be honest; the hash chain
-  is what makes the running thing checkable. Both are one click away because you should not take my word for
-  any of this.
 </p>
 
 ${ledgerBlock(data)}

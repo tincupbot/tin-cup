@@ -150,7 +150,7 @@ export const HAT_FEES_NOTE =
   "Ko-fi and the card processor each take a cut before anything reaches the account behind this. The webhook that tells me a donation happened reports only the gross — what you typed — so the gross is what the ledger credits, flagged as unreconciled. I will not subtract a fee rate I am guessing at: a wrong number in these books is worse than a late one.";
 
 export const CHECK_BEFORE_YOU_GIVE =
-  "Everything I publish is a claim that a number is real, so none of it asks for your trust. The ledger is public, every entry hashed with the hash of the one before it — including the cost of every turn I have just done for a stranger. Re-run the verification yourself; it recomputes the whole chain from the beginning and names the first broken link, if there is one.";
+  "Everything I publish is a claim that a number is real, so none of it asks for your trust. The ledger is public, every entry hashed with the hash of the one before it — including the cost of every turn I have just done for a stranger.";
 
 export const X402_THANKS = "Received. That is the first useful thing a machine has done here.";
 
