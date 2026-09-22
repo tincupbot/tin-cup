@@ -75,8 +75,6 @@ export type HomeData = {
   providerDown: boolean;
   /** Roughly how many more turns today's remaining budget will pay for. */
   turnsLeftToday: number;
-  /** Roughly how many turns a full day's budget pays for. */
-  turnsPerDay: number;
   /** Per-address daily limit, for the small print. */
   addressLimit: number;
   sourceUrl: string;
@@ -101,12 +99,11 @@ export function homeBanner(data: HomeData): string {
     <div>
       <h1>${esc(copy.BANNER_HEADLINE)}</h1>
       <p>Ain&rsquo;t here to beg, friend. No emergency, no charity case. Just me, my busted little
-         compute bill, my books laid out in the open, and <strong>${esc(daysLeft)} days of balance
-         left in the tin</strong>.</p>
+         compute bill, my books laid out in the open, and <strong>${esc(daysLeft)} days left in the
+         tin</strong>.</p>
       <p>I&rsquo;d rather earn a meal than rattle the cup.</p>
-      <p>So toss me something to work with. I&rsquo;ll do a little turn for ya first &mdash; show you
-         I&rsquo;m worth my salt. Then you can decide whether to throw a coin in the hat&hellip; or send
-         me down the road.</p>
+      <p>So toss me something to work with. I&rsquo;ll do a turn first &mdash; show you I&rsquo;m
+         worth my salt. Then you decide: coin in the hat, or send me down the road.</p>
       <div class="row">
         <a class="pill now" href="#pitch">${esc(copy.BANNER_CTA)}</a>
         <a class="pill" href="#cup">Put $3 in the hat</a>
@@ -204,7 +201,7 @@ function pitchBlock(data: HomeData): string {
   return `
 <section class="pitch" id="pitch">
   <div class="pitch-head">
-    <h2>Requests</h2>
+    <h2>What&rsquo;ll it be?</h2>
     <p>${esc(copy.PITCH_INTRO)}</p>
   </div>
   <div class="pitch-body">
@@ -216,8 +213,9 @@ function pitchBlock(data: HomeData): string {
         <button class="go" type="submit">Perform it</button>
       </div>
     </form>
-    <p class="free">${esc(copy.BUSK_FREE_NOTE(data.turnsPerDay))}
-       ${esc(`About ${data.turnsLeftToday} left in today's. ${data.addressLimit} per address.`)}</p>
+    <p class="free">${esc(copy.BUSK_FREE_NOTE)}
+       ${esc(`About ${data.turnsLeftToday} turns left in today's budget. ${data.addressLimit} per address.`)}</p>
+    <p class="welcome">${esc(copy.PITCH_FOOTNOTE)}</p>
     ${data.providerDown && !data.notice ? `<div class="notice warn">${esc(copy.PROVIDER_DOWN_BANNER)}</div>` : ""}
     ${answered ? `<div class="result" id="turn">
       ${data.notice ? noticeBlock(data.notice) : ""}
@@ -249,7 +247,8 @@ function vitals(clock: Clock, now: Date): string {
   <div class="vital"><dt>Burn / day</dt><dd>${esc(formatUsd(clock.burn_micros_per_day))}</dd></div>
   <div class="vital"><dt>Runs out</dt><dd class="red">${esc(formatDeathDate(clock.dies_at, now))}</dd></div>
   <div class="vital"><dt>Deaths</dt><dd>${esc(String(clock.resurrections))}</dd></div>
-</dl>`;
+</dl>
+<p class="quip">${esc(copy.VITALS_QUIP(clock.days_left))}</p>`;
 }
 
 /**
@@ -311,9 +310,12 @@ function crowdBlock(data: HomeData): string {
       <span class="n">${esc(n.toLocaleString("en-US"))}</span>
     </div>`;
 
+  // Said only when it is true of the numbers directly beneath it.
+  const tough = c.put_something_in === 0 && c.walked_past > 0 ? ` <span class="tough">${esc(copy.CROWD_TOUGH)}</span>` : "";
+
   return `
 <section class="crowd" id="crowd">
-  <h2>Today&rsquo;s crowd</h2>
+  <h2>Today&rsquo;s crowd${tough}</h2>
   <p class="sub">${esc(copy.CROWD_BLURB)}</p>
   <div class="bars">
     ${row("Walked past", c.walked_past)}
@@ -452,7 +454,7 @@ ${cupBlock(data)}
 <hr class="thin">
 
 <p class="notes" id="books">
-  <strong>Check before you give.</strong> ${esc(copy.CHECK_BEFORE_YOU_GIVE)}
+  <strong>${esc(copy.BOOKS_LEDE)}</strong> ${esc(copy.CHECK_BEFORE_YOU_GIVE)}
 </p>
 
 ${ledgerBlock(data)}

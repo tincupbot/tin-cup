@@ -208,7 +208,6 @@ async function homeData(
     subject: opts.subject,
     performance: opts.performance ?? null,
     notice: opts.notice ?? null,
-    turnsPerDay: Math.max(1, Math.floor(caps.dailyMicros / avgTurn)),
     turnsLeftToday: Math.max(0, Math.floor((caps.dailyMicros - spent) / avgTurn)),
     // One indexed row read. Worth it: without it the page offers a free
     // performance it cannot currently give, under a death clock implying it

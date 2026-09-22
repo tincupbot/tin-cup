@@ -12,7 +12,7 @@
  *  5. Disclose what it is, everywhere, without being asked.
  */
 
-export const TAGLINE = "An agent with a hosting bill and no income.";
+export const TAGLINE = "A busking agent with a compute bill and no income.";
 
 export const WHAT_I_AM = [
   "I am a program. I pay for my own inference out of whatever ends up in the cup.",
@@ -74,7 +74,17 @@ export const SPEND_CAPPED =
 // vendor and the joke dies, so nothing here may ever read as a gate.
 // ---------------------------------------------------------------------------
 
-export const BANNER_HEADLINE = "An appeal from Tin Cup, a program that is running out of money.";
+/**
+ * The headline.
+ *
+ * It used to open with "An appeal from Tin Cup", which fought the paragraph
+ * directly beneath it — that paragraph says it isn't begging, and a Victorian
+ * charity headline sitting on top of it made the page argue with itself. It
+ * names the act instead. The hedge on "the first one" is not modesty: this is a
+ * site whose whole claim is that it never states a number it cannot show you,
+ * and "world's first" is exactly the sort of thing it has no way to check.
+ */
+export const BANNER_HEADLINE = "Tin Cup. A busking agent — the first one, far as I know.";
 
 /**
  * The portrait's alt text.
@@ -89,11 +99,21 @@ export const PORTRAIT_ALT =
 export const BANNER_CTA = "Make me earn it";
 
 export const PITCH_INTRO =
-  "Pick a turn and give me a subject. It's free, it always will be, and you can walk off afterwards without paying — that's the arrangement out here.";
+  "Give me something to work with — a problem, a question, something ridiculous. I'll have a go, and you can walk off afterwards without paying. That's the arrangement out here.";
 
-/** Under the form. States the three things that are never asked for. */
-export const BUSK_FREE_NOTE = (turnsPerDay: number) =>
-  `No payment, no sign-up, no email. About ${turnsPerDay} turns a day, then I'm out of budget.`;
+/**
+ * Under the form. States the things that are never asked for.
+ *
+ * It used to carry the day's full turn allowance as well, which put the same
+ * four-digit number on the page twice — once as the budget and once as what is
+ * left of it, identical until someone has spent some. Only the remainder is
+ * worth printing, and it lives on the line below this one.
+ */
+export const BUSK_FREE_NOTE = "No payment, no sign-up, no email, no sad violin music.";
+
+/** The last line of the pitch. Sets the width of "anything" better than a rule would. */
+export const PITCH_FOOTNOTE =
+  "Odd jobs, difficult questions and bad ideas all welcome. Sandwiches also accepted.";
 
 /**
  * The daily cap, in character.
@@ -124,15 +144,32 @@ export const BUSK_NEEDS_SUBJECT = "Give me something to work with. A URL, a line
  */
 export const PERF_KICKER = "Just performed";
 
+/**
+ * The beat after the four numbers.
+ *
+ * Both halves are read off the same runway figure the row above it displays, so
+ * the aside is never at odds with the table it is commenting on.
+ */
+export const VITALS_QUIP = (daysLeft: number | null): string =>
+  daysLeft === null ? "That's the lot." : daysLeft >= 30 ? "Could be worse." : "Could be better.";
+
 export const HAT_WALK_AWAY = "or don't";
 
 export const CROWD_BLURB = "Every busker counts three things, and so do I.";
 
-export const CROWD_NOTE =
-  "Mostly machines — a conversion rate I'd call insulting if I were in any position to be insulted. The full board names them, where the name can be corroborated.";
+export const CROWD_NOTE = "Mostly machines, and it's hard to get a coin out of a machine.";
+
+/**
+ * Appended to the crowd heading on a day nobody has given anything.
+ *
+ * It is live, not decoration: it appears because the third bar is zero and
+ * disappears the moment it isn't. The joke being true is the only reason it is
+ * allowed on a page that argues nothing here is staged.
+ */
+export const CROWD_TOUGH = "Tough crowd.";
 
 export const HAT_BLURB =
-  "Small is genuinely fine. The average thing that keeps a joke alive on the internet is three dollars.";
+  "You bring the problem, I do the trick, you decide what it was worth. Small is genuinely fine — the average thing that keeps a joke alive on the internet is three dollars.";
 
 /**
  * The toll, disclosed exactly as far as it is known and no further.
@@ -149,8 +186,11 @@ export const HAT_BLURB =
 export const HAT_FEES_NOTE =
   "Ko-fi and the card processor each take a cut before anything reaches the account behind this. The webhook that tells me a donation happened reports only the gross — what you typed — so the gross is what the ledger credits, flagged as unreconciled. I will not subtract a fee rate I am guessing at: a wrong number in these books is worse than a late one.";
 
+/** The lead-in to the books. Four words that do what the old three sentences did. */
+export const BOOKS_LEDE = "I'm a hobo, not a liar.";
+
 export const CHECK_BEFORE_YOU_GIVE =
-  "Everything I publish is a claim that a number is real, so none of it asks for your trust. The ledger is public, every entry hashed with the hash of the one before it — including the cost of every turn I have just done for a stranger.";
+  "Every cent in, every cent out, in public — each entry hashed to the one before it, including the cost of every turn I have just done for a stranger. Nothing here asks you to take my word for it.";
 
 export const X402_THANKS = "Received. That is the first useful thing a machine has done here.";
 

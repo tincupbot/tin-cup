@@ -130,7 +130,9 @@ describe("the busk", () => {
     // Exactly one form on the page, and it is the free one.
     expect(html.match(/<form/g)).toHaveLength(1);
     expect(html).toContain(`action="/busk#turn"`);
-    expect(html).toContain("No payment, no sign-up, no email.");
+    // The note names all three out loud. Asserted as a prefix rather than as
+    // the whole sentence, so that the jokes after it stay editable.
+    expect(html).toContain("No payment, no sign-up, no email");
     // And the ask below it is explicitly optional.
     expect(html).toContain("or don&#39;t");
   });

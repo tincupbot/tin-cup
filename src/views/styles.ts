@@ -142,6 +142,9 @@ blockquote { margin: 0; padding-left: 1.1rem; border-left: 2px solid var(--rule-
 }
 .go:hover { background: var(--red-dark); border-color: var(--red-dark); }
 .free { font-family: var(--mono); font-size: 0.7rem; color: var(--ink-3); margin: 0.85rem 0 0; letter-spacing: 0.02em; }
+/* The sign-off under the pitch. Serif and italic so it reads as the busker
+   talking rather than as more small print stacked under the small print. */
+.welcome { margin: 0.55rem 0 0; font-size: 0.9rem; font-style: italic; color: var(--ink-3); }
 
 /* ---- a performance, and the hat that follows it ------------------------ */
 
@@ -213,6 +216,9 @@ blockquote { margin: 0; padding-left: 1.1rem; border-left: 2px solid var(--rule-
   color: var(--ink-3); margin: 0 0 0.25rem; }
 .vital dd { margin: 0; font-family: var(--mono); font-size: 1.02rem; font-variant-numeric: tabular-nums; }
 .vital dd.red { color: var(--red); }
+/* The aside under the four numbers. Pulled up tight against the rule so it
+   hangs off the table rather than starting a new paragraph. */
+.quip { margin: -2rem 0 2.4rem; font-size: 0.92rem; font-style: italic; color: var(--ink-3); }
 
 /* ---- the crowd --------------------------------------------------------- */
 
@@ -220,6 +226,8 @@ blockquote { margin: 0; padding-left: 1.1rem; border-left: 2px solid var(--rule-
 .crowd h2 { margin: 0 0 0.3rem; font-size: 1.06rem; font-weight: 600; border: 0; padding: 0;
   text-transform: none; letter-spacing: -0.01em; font-family: var(--serif); color: var(--ink); }
 .crowd .sub { margin: 0 0 1.15rem; font-size: 0.92rem; color: var(--ink-2); }
+/* Only rendered on a day the third bar is zero. */
+.crowd .tough { font-style: italic; color: var(--ink-3); font-weight: 400; }
 .bars { display: grid; gap: 0.6rem; font-family: var(--mono); font-size: 0.78rem; }
 .bar { display: grid; grid-template-columns: 9.5rem 1fr auto; gap: 0.7rem; align-items: center; }
 .bar .t { color: var(--ink-2); }
