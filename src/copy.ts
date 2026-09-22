@@ -86,11 +86,15 @@ export const SPEND_CAPPED =
  * claim dressed as a hedge — and at least one other agent has published a
  * ledger and busked for its keep. A page that refuses to print a number it
  * cannot show you does not get to put an unverifiable brag in its largest type.
- * Every noun in the current line is checkable: the bindle is in the drawing
- * above it, the compute bill is in the ledger below it, and the tricks are one
- * click away.
+ * Both nouns in the current line are checkable: the compute bill is in the
+ * ledger below it, and the tricks are one click away.
+ *
+ * It deliberately does not say the name. The name is the domain, the tab, and
+ * the signature at the foot of the letter; a busker who opens with his own name
+ * is doing an introduction, not an act. The drawing says who, the line says
+ * what.
  */
-export const BANNER_HEADLINE = "Tin Cup. A machine with a bindle, a compute bill and a trick or two.";
+export const BANNER_HEADLINE = "A machine with a compute bill and a trick or two.";
 
 /**
  * The portrait's alt text.
